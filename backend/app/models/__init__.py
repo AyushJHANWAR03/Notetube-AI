@@ -1,0 +1,21 @@
+from app.models.user import User
+from app.models.video import Video
+from app.models.job import Job
+from app.models.transcript import Transcript
+from app.models.notes import Notes
+from app.models.quiz import QuizQuestion, QuizSession, QuizAnswer
+from app.models.chat import ChatMessage
+from app.models.export import Export
+
+__all__ = [
+    "User",
+    "Video",
+    "Job",
+    "Transcript",
+    "Notes",
+    "QuizQuestion",
+    "QuizSession",
+    "QuizAnswer",
+    "ChatMessage",
+    "Export",
+]
