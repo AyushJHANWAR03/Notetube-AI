@@ -24,7 +24,6 @@ redis==5.0.1
 rq==1.16.1
 
 # YouTube
-youtube-transcript-api==0.6.2
 yt-dlp==2024.12.23
 
 # OpenAI

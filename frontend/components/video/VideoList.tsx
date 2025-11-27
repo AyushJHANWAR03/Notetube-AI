@@ -6,7 +6,7 @@ import { videoApi } from '@/lib/videoApi';
 import VideoCard from './VideoCard';
 
 interface VideoListProps {
-  refreshTrigger?: number; // Increment to trigger refresh
+  refreshTrigger?: number;
 }
 
 export default function VideoList({ refreshTrigger }: VideoListProps) {
@@ -47,7 +47,7 @@ export default function VideoList({ refreshTrigger }: VideoListProps) {
   if (loading && videos.length === 0) {
     return (
       <div className="flex justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
       </div>
     );
   }
@@ -55,10 +55,10 @@ export default function VideoList({ refreshTrigger }: VideoListProps) {
   if (error) {
     return (
       <div className="text-center py-12">
-        <p className="text-red-500 mb-4">{error}</p>
+        <p className="text-red-400 mb-4">{error}</p>
         <button
           onClick={fetchVideos}
-          className="text-blue-600 hover:underline"
+          className="text-blue-400 hover:underline"
         >
           Try again
         </button>
@@ -68,10 +68,10 @@ export default function VideoList({ refreshTrigger }: VideoListProps) {
 
   if (videos.length === 0) {
     return (
-      <div className="text-center py-12 bg-gray-50 rounded-lg">
-        <div className="text-4xl mb-4">📺</div>
-        <h3 className="text-lg font-semibold text-gray-700 mb-2">No videos yet</h3>
-        <p className="text-gray-500">
+      <div className="text-center py-12">
+        <div className="text-5xl mb-4">🎬</div>
+        <h3 className="text-lg font-semibold text-white mb-2">No videos yet</h3>
+        <p className="text-gray-400">
           Paste a YouTube URL above to get started!
         </p>
       </div>
@@ -80,14 +80,24 @@ export default function VideoList({ refreshTrigger }: VideoListProps) {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold">Your Videos ({videos.length})</h3>
+      <div className="flex justify-between items-center mb-6">
+        <h3 className="text-xl font-semibold text-white">Your Videos ({videos.length})</h3>
         <button
           onClick={fetchVideos}
           disabled={loading}
-          className="text-sm text-blue-600 hover:underline disabled:opacity-50"
+          className="text-sm text-blue-400 hover:text-blue-300 disabled:opacity-50 flex items-center gap-2"
         >
-          {loading ? 'Refreshing...' : 'Refresh'}
+          {loading ? (
+            <>
+              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Refreshing...
+            </>
+          ) : (
+            'Refresh'
+          )}
         </button>
       </div>
 

@@ -2,10 +2,9 @@
 
 import { useState } from 'react';
 import { videoApi, extractYouTubeVideoId, getYouTubeThumbnail } from '@/lib/videoApi';
-import { VideoCreateResponse } from '@/lib/types';
 
 interface VideoInputProps {
-  onVideoSubmitted: (response: VideoCreateResponse) => void;
+  onVideoSubmitted: (videoId: string) => void;
   disabled?: boolean;
 }
 
@@ -50,34 +49,32 @@ export default function VideoInput({ onVideoSubmitted, disabled }: VideoInputPro
 
     try {
       const response = await videoApi.createVideo(url);
-      onVideoSubmitted(response);
+      // Pass the video ID to parent - they'll handle navigation
+      onVideoSubmitted(response.video.id);
       setUrl('');
       setPreview(null);
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to submit video. Please try again.');
-    } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <h3 className="text-xl font-semibold mb-4">Process a Video</h3>
-
+    <div className="bg-gray-800 rounded-xl border border-gray-700 p-6">
       <form onSubmit={handleSubmit}>
-        <div className="flex gap-4">
+        <div className="flex flex-col sm:flex-row gap-4">
           <input
             type="text"
             value={url}
             onChange={(e) => handleUrlChange(e.target.value)}
             placeholder="Paste YouTube URL here..."
             disabled={disabled || loading}
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+            className="flex-1 px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
           />
           <button
             type="submit"
             disabled={disabled || loading || !url.trim()}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold px-6 py-2 rounded-lg transition-colors flex items-center gap-2"
+            className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 disabled:from-gray-600 disabled:to-gray-600 text-white font-semibold px-8 py-3 rounded-lg transition-all flex items-center justify-center gap-2 min-w-[160px]"
           >
             {loading ? (
               <>
@@ -88,35 +85,39 @@ export default function VideoInput({ onVideoSubmitted, disabled }: VideoInputPro
                 Processing...
               </>
             ) : (
-              'Process Video'
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                Generate Notes
+              </>
             )}
           </button>
         </div>
 
         {error && (
-          <p className="text-red-500 text-sm mt-2">{error}</p>
+          <p className="text-red-400 text-sm mt-3">{error}</p>
         )}
 
-        <p className="text-sm text-gray-500 mt-2">
+        <p className="text-sm text-gray-500 mt-3">
           Supports YouTube videos, shorts, and embedded links
         </p>
       </form>
 
       {/* Thumbnail Preview */}
       {preview && (
-        <div className="mt-4 flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
+        <div className="mt-4 flex items-center gap-4 p-4 bg-gray-900/50 rounded-lg border border-gray-700">
           <img
             src={preview.thumbnail}
             alt="Video thumbnail"
             className="w-32 h-20 object-cover rounded"
             onError={(e) => {
-              // Fallback to default quality if maxres not available
               (e.target as HTMLImageElement).src = getYouTubeThumbnail(preview.videoId, 'default');
             }}
           />
           <div>
-            <p className="text-sm text-gray-600">Video ID: {preview.videoId}</p>
-            <p className="text-xs text-gray-400">Click "Process Video" to start</p>
+            <p className="text-sm text-gray-400">Video ID: <span className="text-gray-300">{preview.videoId}</span></p>
+            <p className="text-xs text-gray-500 mt-1">Click "Generate Notes" to start processing</p>
           </div>
         </div>
       )}

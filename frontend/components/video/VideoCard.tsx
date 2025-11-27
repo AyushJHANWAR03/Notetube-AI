@@ -11,22 +11,22 @@ interface VideoCardProps {
 
 const statusConfig = {
   PENDING: {
-    color: 'bg-yellow-100 text-yellow-800',
+    color: 'bg-yellow-900/50 text-yellow-400',
     label: 'Pending',
     icon: '⏳'
   },
   PROCESSING: {
-    color: 'bg-blue-100 text-blue-800',
+    color: 'bg-blue-900/50 text-blue-400',
     label: 'Processing',
     icon: '🔄'
   },
   READY: {
-    color: 'bg-green-100 text-green-800',
+    color: 'bg-green-900/50 text-green-400',
     label: 'Ready',
     icon: '✅'
   },
   FAILED: {
-    color: 'bg-red-100 text-red-800',
+    color: 'bg-red-900/50 text-red-400',
     label: 'Failed',
     icon: '❌'
   }
@@ -36,10 +36,11 @@ export default function VideoCard({ video, onDelete }: VideoCardProps) {
   const status = statusConfig[video.status];
   const thumbnail = video.thumbnail_url || getYouTubeThumbnail(video.youtube_video_id, 'hq');
 
-  const isClickable = video.status === 'READY';
+  // All cards are now clickable (user can view processing state on video page)
+  const isClickable = video.status !== 'FAILED';
 
   const cardContent = (
-    <div className={`bg-white rounded-lg shadow overflow-hidden ${isClickable ? 'hover:shadow-lg transition-shadow cursor-pointer' : ''}`}>
+    <div className={`bg-gray-800 rounded-lg border border-gray-700 overflow-hidden ${isClickable ? 'hover:border-gray-600 hover:bg-gray-750 transition-all cursor-pointer' : ''}`}>
       {/* Thumbnail */}
       <div className="relative">
         <img
@@ -72,7 +73,7 @@ export default function VideoCard({ video, onDelete }: VideoCardProps) {
 
       {/* Content */}
       <div className="p-4">
-        <h3 className="font-semibold text-gray-900 line-clamp-2 mb-2">
+        <h3 className="font-semibold text-white line-clamp-2 mb-2">
           {video.title || 'Processing...'}
         </h3>
 
@@ -81,13 +82,13 @@ export default function VideoCard({ video, onDelete }: VideoCardProps) {
             {status.icon} {status.label}
           </span>
 
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-gray-400">
             {new Date(video.created_at).toLocaleDateString()}
           </span>
         </div>
 
         {video.status === 'FAILED' && video.failure_reason && (
-          <p className="text-xs text-red-500 mt-2 line-clamp-2">
+          <p className="text-xs text-red-400 mt-2 line-clamp-2">
             {video.failure_reason}
           </p>
         )}

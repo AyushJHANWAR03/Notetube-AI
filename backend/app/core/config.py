@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     BACKEND_URL: str
     ENVIRONMENT: str = "development"
 
+    # YouTube (optional)
+    YOUTUBE_COOKIES_FILE: str | None = None
+    PROXY_URL: str | None = None
+    PROXY_LIST: str | None = None
+
     # API
     API_V1_PREFIX: str = "/api"
     PROJECT_NAME: str = "NoteTube AI"
