@@ -139,7 +139,8 @@ class VideoProcessingService:
         db: AsyncSession,
         limit: int = 50,
         offset: int = 0,
-        status: Optional[str] = None
+        status: Optional[str] = None,
+        exclude_failed: bool = True
     ) -> List[Video]:
         """
         Get all videos for a user.
@@ -150,6 +151,7 @@ class VideoProcessingService:
             limit: Maximum number of videos to return
             offset: Number of videos to skip
             status: Filter by status (optional)
+            exclude_failed: Whether to exclude failed videos (default True)
 
         Returns:
             List of Video objects
@@ -158,6 +160,9 @@ class VideoProcessingService:
 
         if status:
             query = query.where(Video.status == status)
+        elif exclude_failed:
+            # Exclude failed videos by default (unless specific status filter is used)
+            query = query.where(Video.status != self.STATUS_FAILED)
 
         query = query.order_by(Video.created_at.desc()).limit(limit).offset(offset)
 
@@ -330,7 +335,7 @@ class VideoProcessingService:
         db: AsyncSession
     ) -> Transcript:
         """
-        Save transcript for a video.
+        Save or update transcript for a video.
 
         Args:
             video_id: Video's UUID
@@ -341,8 +346,22 @@ class VideoProcessingService:
             db: Database session
 
         Returns:
-            Created Transcript object
+            Created or updated Transcript object
         """
+        # Check if transcript already exists for this video
+        existing = await self.get_transcript_by_video_id(video_id, db)
+
+        if existing:
+            # Update existing transcript (e.g., for transliteration)
+            existing.language_code = language_code
+            existing.provider = provider
+            existing.raw_text = raw_text
+            existing.segments = segments
+            await db.commit()
+            await db.refresh(existing)
+            return existing
+
+        # Create new transcript
         transcript = Transcript(
             video_id=video_id,
             language_code=language_code,

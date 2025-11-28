@@ -5,10 +5,11 @@ import { videoApi, extractYouTubeVideoId, getYouTubeThumbnail } from '@/lib/vide
 
 interface VideoInputProps {
   onVideoSubmitted: (videoId: string) => void;
+  onBeforeSubmit?: (url: string) => boolean;
   disabled?: boolean;
 }
 
-export default function VideoInput({ onVideoSubmitted, disabled }: VideoInputProps) {
+export default function VideoInput({ onVideoSubmitted, onBeforeSubmit, disabled }: VideoInputProps) {
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +42,11 @@ export default function VideoInput({ onVideoSubmitted, disabled }: VideoInputPro
     const videoId = extractYouTubeVideoId(url);
     if (!videoId) {
       setError('Please enter a valid YouTube URL');
+      return;
+    }
+
+    // Check if we should proceed (e.g., user authentication check)
+    if (onBeforeSubmit && !onBeforeSubmit(url)) {
       return;
     }
 

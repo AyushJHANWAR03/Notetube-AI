@@ -295,12 +295,11 @@ export default function TranscriptPanel({
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-2 h-2 bg-yellow-400 rounded-full" />
               )}
 
-              {/* Transcript text - selectable */}
+              {/* Transcript text - selectable, clean without timestamps */}
               <p
                 className={`text-sm leading-relaxed select-text ${
                   isActive ? 'text-white' : 'text-gray-300'
                 }`}
-                onClick={(e) => e.stopPropagation()}
               >
                 {group.text}
               </p>

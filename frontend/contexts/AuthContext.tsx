@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { User } from '@/lib/types';
 import api from '@/lib/api';
 
@@ -17,8 +17,13 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const initializedRef = useRef(false);
 
   useEffect(() => {
+    // Prevent double initialization in strict mode
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
     // Check if user is already logged in on mount
     const token = localStorage.getItem('token');
     if (token) {
@@ -32,9 +37,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await api.get('/api/me');
       setUser(response.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to fetch user:', error);
-      localStorage.removeItem('token');
+      // Only remove token on 401 Unauthorized - not on network errors
+      if (error.response?.status === 401) {
+        localStorage.removeItem('token');
+      }
+      // For other errors, keep the token - user might still be valid
     } finally {
       setLoading(false);
     }

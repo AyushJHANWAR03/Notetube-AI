@@ -2,7 +2,7 @@
 Video Processing Worker - Background task for processing YouTube videos.
 
 Uses RQ (Redis Queue) for background job processing.
-Runs all 3 AI generation tasks in parallel using ThreadPoolExecutor.
+Runs 2 AI generation tasks in parallel using ThreadPoolExecutor.
 """
 import asyncio
 import time
@@ -177,6 +177,44 @@ async def _process_video_async(
             )
             print(f"[STEP 4/7] ✓ Transcript saved")
 
+            # Get transcript data
+            transcript = video_data["transcript"]["raw_text"]
+            segments = video_data["transcript"]["segments"]
+            language_code = video_data["transcript"]["language_code"]
+
+            # Step 2: Transliterate non-English transcripts to English
+            transliteration_tokens = 0
+            if not language_code.lower().startswith('en'):
+                print(f"[STEP 4.5/7] Transliterating {language_code} transcript to English...")
+                print(f"  - Original segments: {len(segments)}")
+
+                ai_service = AINotesService()
+                transliteration_result = ai_service.transliterate_to_english(
+                    segments=segments,
+                    source_language=language_code
+                )
+
+                if transliteration_result.get("was_transliterated"):
+                    segments = transliteration_result["segments"]
+                    transcript = transliteration_result["raw_text"]
+                    transliteration_tokens = transliteration_result["tokens_used"]
+                    print(f"[STEP 4.5/7] ✓ Transliteration complete ({transliteration_tokens} tokens)")
+                    print(f"  - Sample: {segments[0]['text'][:100] if segments else 'N/A'}...")
+
+                    # Update transcript in database with English version
+                    print(f"[STEP 4.5/7] Updating transcript with English version...")
+                    await video_service.save_transcript(
+                        video_id=video_id,
+                        language_code="en",  # Now English
+                        provider=video_data["transcript"]["provider"] + "_transliterated",
+                        raw_text=transcript,
+                        segments=segments,
+                        db=db
+                    )
+                    print(f"[STEP 4.5/7] ✓ English transcript saved")
+                else:
+                    print(f"[STEP 4.5/7] Skipped (already English)")
+
             await video_service.update_job_status(
                 job.id,
                 video_service.JOB_GENERATING_NOTES,
@@ -184,13 +222,11 @@ async def _process_video_async(
                 progress=40
             )
 
-            # Step 2: Generate AI content in parallel
-            transcript = video_data["transcript"]["raw_text"]
-            segments = video_data["transcript"]["segments"]
+            # Step 3: Generate AI content in parallel
             video_title = video_data["metadata"].get("title", "Untitled")
             video_duration = video_data["metadata"].get("duration_seconds", 0)
 
-            print(f"[STEP 5/7] Starting AI content generation (3 parallel tasks)...")
+            print(f"[STEP 5/7] Starting AI content generation (2 parallel tasks)...")
             print(f"  - Transcript length: {len(transcript)} chars")
             print(f"  - Video title: {video_title}")
             ai_results = await _generate_ai_content_parallel(
@@ -218,16 +254,15 @@ async def _process_video_async(
                 action_items=ai_results["structured"]["action_items"],
                 topics=ai_results["structured"]["topics"],
                 difficulty_level=ai_results["structured"]["difficulty_level"],
-                # Full notes
-                markdown_notes=ai_results["notes"]["markdown_notes"],
+                # Full notes - no longer generated, pass empty string
+                markdown_notes="",
                 chapters=ai_results["chapters"]["chapters"],
                 # AI metadata
-                notes_model=ai_results["notes"]["model_used"],
-                notes_tokens=ai_results["notes"]["tokens_used"] + ai_results["structured"]["tokens_used"],
+                notes_model=ai_results["structured"]["model_used"],
+                notes_tokens=ai_results["structured"]["tokens_used"],
                 chapters_tokens=ai_results["chapters"]["tokens_used"],
-                was_truncated=ai_results["notes"].get("was_truncated", False),
+                was_truncated=False,
                 raw_llm_output={
-                    "notes": ai_results["notes"],
                     "chapters": ai_results["chapters"],
                     "structured": ai_results["structured"]
                 }
@@ -250,14 +285,15 @@ async def _process_video_async(
             )
 
             total_tokens = (
-                ai_results["notes"]["tokens_used"] +
                 ai_results["chapters"]["tokens_used"] +
-                ai_results["structured"]["tokens_used"]
+                ai_results["structured"]["tokens_used"] +
+                transliteration_tokens
             )
 
             print(f"[STEP 7/7] ✓ Video processing COMPLETE!")
             print(f"  - Total tokens used: {total_tokens}")
-            print(f"  - Notes tokens: {ai_results['notes']['tokens_used']}")
+            if transliteration_tokens > 0:
+                print(f"  - Transliteration tokens: {transliteration_tokens}")
             print(f"  - Chapters tokens: {ai_results['chapters']['tokens_used']}")
             print(f"  - Structured tokens: {ai_results['structured']['tokens_used']}")
 
@@ -343,10 +379,9 @@ async def _generate_ai_content_parallel(
     """
     Generate all AI content in parallel using ThreadPoolExecutor.
 
-    Runs 3 tasks concurrently:
-    1. generate_notes() - Markdown notes
-    2. generate_chapters() - Video chapters
-    3. generate_structured_notes() - Summary, bullets, flashcards, etc.
+    Runs 2 tasks concurrently:
+    1. generate_chapters() - Video chapters (Breakdown tab)
+    2. generate_structured_notes() - Summary, bullets, flashcards, etc.
 
     Args:
         transcript: Full transcript text
@@ -358,12 +393,6 @@ async def _generate_ai_content_parallel(
         Dictionary with all AI generation results
     """
     ai_service = AINotesService()
-
-    def generate_notes():
-        print(f"  [AI] Starting markdown notes generation...")
-        result = ai_service.generate_notes(transcript, video_title=video_title)
-        print(f"  [AI] ✓ Markdown notes done ({result['tokens_used']} tokens)")
-        return result
 
     def generate_chapters():
         print(f"  [AI] Starting chapters generation...")
@@ -385,11 +414,10 @@ async def _generate_ai_content_parallel(
         print(f"  [AI] ✓ Structured notes done ({result['tokens_used']} tokens)")
         return result
 
-    # Run all 3 AI tasks in parallel
-    print(f"  [AI] Launching 3 parallel OpenAI requests...")
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    # Run 2 AI tasks in parallel
+    print(f"  [AI] Launching 2 parallel OpenAI requests...")
+    with ThreadPoolExecutor(max_workers=2) as executor:
         futures = {
-            executor.submit(generate_notes): "notes",
             executor.submit(generate_chapters): "chapters",
             executor.submit(generate_structured): "structured"
         }
@@ -403,7 +431,7 @@ async def _generate_ai_content_parallel(
                 print(f"  [AI] ❌ Task '{task_name}' FAILED: {str(e)}")
                 raise AINotesServiceError(f"Failed to generate {task_name}: {str(e)}")
 
-    print(f"  [AI] All 3 AI tasks completed successfully")
+    print(f"  [AI] All 2 AI tasks completed successfully")
     return results
 
 

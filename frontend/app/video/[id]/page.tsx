@@ -86,14 +86,26 @@ export default function VideoDetailPage() {
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
+    // Don't redirect immediately - give context time to load from localStorage
+    // This handles the case where user just signed in via auth callback
     if (!authLoading && !user) {
-      router.push('/');
+      // Check if there's a token in localStorage - if so, user might be loading
+      const token = localStorage.getItem('token');
+      // Also check for recent auth - if user just logged in, give it more time
+      const recentAuth = sessionStorage.getItem('recentAuth');
+      if (!token && !recentAuth) {
+        router.push('/dashboard');
+      } else if (recentAuth) {
+        // Clear the flag after checking
+        sessionStorage.removeItem('recentAuth');
+      }
     }
   }, [user, authLoading, router]);
 
-  // Initial fetch
+  // Initial fetch - check for token to handle post-auth-callback navigation
   useEffect(() => {
-    if (params.id && user) {
+    const token = localStorage.getItem('token');
+    if (params.id && (user || token)) {
       fetchVideo();
     }
   }, [params.id, user]);
@@ -312,7 +324,8 @@ export default function VideoDetailPage() {
         seekToTime(result.timestamp);
       }
     } catch (err: any) {
-      setSeekError(err.response?.data?.detail || 'Failed to search. Please try again.');
+      // Always show a friendly message - don't expose technical errors to users
+      setSeekError('Could not find that moment. Try different keywords.');
     } finally {
       setIsSeekSearching(false);
     }
@@ -426,24 +439,33 @@ export default function VideoDetailPage() {
     </div>
   );
 
-  // Render Failed State
-  const renderFailedState = () => (
-    <div className="lg:w-[40%] xl:w-[38%] lg:border-l border-gray-700 bg-gray-800 lg:h-screen flex flex-col items-center justify-center p-8">
-      <div className="w-20 h-20 rounded-full bg-red-900/30 flex items-center justify-center mb-6">
-        <span className="text-4xl">❌</span>
+  // Render Failed State - friendly "Oops" message for no captions
+  const renderFailedState = () => {
+    const isNoCaptions = video.failure_reason?.toLowerCase().includes('caption') ||
+                         video.failure_reason?.toLowerCase().includes('subtitle');
+
+    return (
+      <div className="lg:w-[40%] xl:w-[38%] lg:border-l border-gray-700 bg-gray-800 lg:h-screen flex flex-col items-center justify-center p-8">
+        <div className="w-20 h-20 rounded-full bg-gray-700 flex items-center justify-center mb-6">
+          <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.182 16.318A4.486 4.486 0 0012.016 15a4.486 4.486 0 00-3.198 1.318M21 12a9 9 0 11-18 0 9 9 0 0118 0zM9.75 9.75c0 .414-.168.75-.375.75S9 10.164 9 9.75 9.168 9 9.375 9s.375.336.375.75zm-.375 0h.008v.015h-.008V9.75zm5.625 0c0 .414-.168.75-.375.75s-.375-.336-.375-.75.168-.75.375-.75.375.336.375.75zm-.375 0h.008v.015h-.008V9.75z" />
+          </svg>
+        </div>
+        <h3 className="text-xl font-semibold text-white mb-2">Oops!</h3>
+        <p className="text-gray-400 text-center mb-6 max-w-sm">
+          {isNoCaptions
+            ? "This video doesn't have captions available. Please try a video with captions or subtitles enabled."
+            : (video.failure_reason || 'Something went wrong while processing this video.')}
+        </p>
+        <Link
+          href="/dashboard"
+          className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+        >
+          Try Another Video
+        </Link>
       </div>
-      <h3 className="text-xl font-semibold text-white mb-2">Processing Failed</h3>
-      <p className="text-gray-400 text-center mb-4">
-        {video.failure_reason || 'An error occurred while processing this video.'}
-      </p>
-      <Link
-        href="/dashboard"
-        className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
-      >
-        Back to Dashboard
-      </Link>
-    </div>
-  );
+    );
+  };
 
   // Render Notes Content (when READY)
   const renderNotesContent = () => {

@@ -13,22 +13,18 @@ const statusConfig = {
   PENDING: {
     color: 'bg-yellow-900/50 text-yellow-400',
     label: 'Pending',
-    icon: '⏳'
   },
   PROCESSING: {
     color: 'bg-blue-900/50 text-blue-400',
     label: 'Processing',
-    icon: '🔄'
   },
   READY: {
     color: 'bg-green-900/50 text-green-400',
     label: 'Ready',
-    icon: '✅'
   },
   FAILED: {
     color: 'bg-red-900/50 text-red-400',
     label: 'Failed',
-    icon: '❌'
   }
 };
 
@@ -72,14 +68,14 @@ export default function VideoCard({ video, onDelete }: VideoCardProps) {
       </div>
 
       {/* Content */}
-      <div className="p-4">
-        <h3 className="font-semibold text-white line-clamp-2 mb-2">
+      <div className="p-4 flex flex-col h-[120px]">
+        <h3 className="font-semibold text-white line-clamp-2 min-h-[48px]">
           {video.title || 'Processing...'}
         </h3>
 
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mt-auto">
           <span className={`text-xs px-2 py-1 rounded-full ${status.color}`}>
-            {status.icon} {status.label}
+            {status.label}
           </span>
 
           <span className="text-xs text-gray-400">

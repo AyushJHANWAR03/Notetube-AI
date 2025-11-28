@@ -1,7 +1,8 @@
 """
 AI Notes Service for generating notes and chapters from video transcripts.
 """
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 from openai import OpenAI
 
@@ -128,106 +129,86 @@ Please provide well-structured markdown notes."""
     ) -> Dict[str, Any]:
         """
         Generate video chapters with timestamps from transcript.
-
-        Args:
-            transcript: Raw transcript text
-            segments: List of transcript segments with timestamps
-            video_duration: Total video duration in seconds (optional)
-            model: OpenAI model to use (default: gpt-4o-mini)
-
-        Returns:
-            Dictionary containing:
-                - chapters: List of chapters with title, start_time, end_time, summary
-                - model_used: Model that was used
-                - tokens_used: Number of tokens consumed
-
-        Raises:
-            AINotesServiceError: If chapter generation fails
+        Uses a two-step approach:
+        1. Pre-calculate evenly spaced time slots
+        2. Ask AI to name each slot based on content at that time
         """
         if not segments:
             raise AINotesServiceError("Segments cannot be empty")
 
-        # Let AI decide chapter count - just provide video info
-        # Create transcript with timestamps for chapter generation
-        total_segments = len(segments)
+        # Get actual video duration from segments if not provided
+        if not video_duration and segments:
+            last_seg = segments[-1]
+            video_duration = last_seg.get('start', 0) + last_seg.get('duration', 0)
 
-        # Sample segments to fit in context window, but cover ENTIRE video
-        max_segments = 1200  # Enough for most videos
+        # Calculate number of chapters: 1 per 3 minutes, min 6, max 25
+        num_chapters = max(6, min(25, int(video_duration / 180))) if video_duration else 10
 
-        if total_segments > max_segments:
-            # Sample evenly across the entire video
-            step = max(1, total_segments // max_segments)
-            sampled_segments = segments[::step]
-            # ALWAYS include last 20 segments to ensure we cover the end
-            if len(sampled_segments) > max_segments:
-                sampled_segments = sampled_segments[:max_segments-20] + segments[-20:]
-        else:
-            sampled_segments = segments
+        # Pre-calculate evenly spaced chapter start times
+        chapter_interval = video_duration / num_chapters
+        chapter_times = []
+        for i in range(num_chapters):
+            start_time = int(i * chapter_interval)
+            chapter_times.append(start_time)
 
-        timestamped_transcript = []
-        for seg in sampled_segments:
-            timestamp = seg.get('start', 0)
-            text = seg.get('text', '')
-            timestamped_transcript.append(f"[{timestamp:.1f}s] {text}")
+        # Build context for each chapter slot - get transcript around each timestamp
+        chapter_contexts = []
+        for i, start_time in enumerate(chapter_times):
+            end_time = chapter_times[i + 1] if i < len(chapter_times) - 1 else int(video_duration)
 
-        timestamped_text = "\n".join(timestamped_transcript)
+            # Get segments in this time range
+            slot_text = []
+            for seg in segments:
+                seg_start = seg.get('start', 0)
+                if start_time <= seg_start < end_time:
+                    slot_text.append(seg.get('text', ''))
 
-        # Calculate video duration info for prompt
-        duration_info = ""
-        if video_duration:
-            hours = int(video_duration // 3600)
-            mins = int((video_duration % 3600) // 60)
-            secs = int(video_duration % 60)
-            if hours > 0:
-                duration_info = f"Video duration: {hours} hour {mins} minutes ({int(video_duration)} seconds total)"
-            else:
-                duration_info = f"Video duration: {mins} minutes {secs} seconds ({int(video_duration)} seconds total)"
+            # Take first ~500 chars of this slot's content
+            content = ' '.join(slot_text)[:500]
+            mins = int(start_time // 60)
+            secs = int(start_time % 60)
 
-        system_prompt = f"""You are an expert at analyzing video content and creating meaningful chapter breakdowns.
+            chapter_contexts.append({
+                "slot": i + 1,
+                "time": f"{mins}:{secs:02d}",
+                "seconds": start_time,
+                "content_preview": content if content else "(no transcript at this point)"
+            })
 
-IMPORTANT: ALWAYS write chapter titles and summaries in ENGLISH, regardless of the transcript's original language.
+        # Format for prompt
+        slots_text = ""
+        for ctx in chapter_contexts:
+            slots_text += f"\nSlot {ctx['slot']} at {ctx['time']} ({ctx['seconds']}s):\n{ctx['content_preview']}\n"
 
-{duration_info}
+        total_mins = int(video_duration // 60)
+        total_secs = int(video_duration % 60)
 
-Analyze the transcript and create chapters that cover the ENTIRE video from start to finish.
+        system_prompt = """You are creating YouTube video chapters with titles and summaries. I will give you pre-calculated timestamps with content previews. Your job is to give each slot a short title AND a brief summary.
 
-Guidelines:
-- Create as many chapters as needed to properly segment the content (you decide the number)
-- First chapter should be "Introduction" or similar, starting at 0.0 seconds
-- Last chapter should cover the conclusion/wrap-up section near the end of the video
-- Each chapter should represent a distinct topic or section change
-- Chapters should be distributed across the ENTIRE video duration
-- Create descriptive chapter titles (3-8 words)
-- Write brief summaries (1-2 sentences) for each chapter
+RULES:
+- Titles must be 2-5 words max
+- Use specific, descriptive names based on the content
+- Examples: "The Problem", "Building the Demo", "Q&A Session", "Key Takeaways"
+- NO generic names like "Part 1", "Section 2", "Middle", "Continued"
+- First slot should be "Introduction" or describe what the video starts with
+- Last slot should be "Conclusion", "Wrap Up", "Final Thoughts" or similar
+- Summary should be 1-2 sentences describing what's covered in that chapter
+- ALWAYS write in ENGLISH regardless of transcript language
 
-Return ONLY a valid JSON array with this structure:
+Return ONLY a JSON array with title and summary for each slot:
 [
-  {{
-    "title": "Introduction",
-    "start_time": 0.0,
-    "summary": "Brief description"
-  }},
-  ...more chapters covering the whole video...,
-  {{
-    "title": "Conclusion/Wrap-up",
-    "start_time": <near end of video>,
-    "summary": "Brief description"
-  }}
-]
+  {"slot": 1, "title": "Introduction", "summary": "Brief overview of the video topic and what will be covered."},
+  {"slot": 2, "title": "The Main Topic", "summary": "Explanation of the core concept with examples."},
+  ...
+]"""
 
-CRITICAL RULES:
-- start_time must be in SECONDS (e.g., 120.0 for 2 minutes, 3600.0 for 1 hour)
-- Chapters must be in chronological order
-- Return ONLY the JSON array, no other text
-- MUST cover from 0 seconds to approximately {int(video_duration) if video_duration else 'the end'} seconds"""
+        user_prompt = f"""Video length: {total_mins}:{total_secs:02d} ({int(video_duration)} seconds)
+Number of chapters needed: {num_chapters}
 
-        user_prompt = f"""Create chapters for this video transcript. The video is {int(video_duration) if video_duration else 'unknown'} seconds long.
-Cover the ENTIRE video from beginning (0 seconds) to end ({int(video_duration) if video_duration else 'last timestamp'} seconds).
+Give a title AND summary for each of these {num_chapters} chapter slots:
+{slots_text}
 
-Transcript with timestamps:
-{timestamped_text}
-
-Return the chapters as a JSON array."""
+Return JSON array with title and summary for each slot."""
 
         try:
             response = self.client.chat.completions.create(
@@ -236,45 +217,54 @@ Return the chapters as a JSON array."""
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.5,
-                max_tokens=4000  # Increased for more chapters
+                temperature=0.3,
+                max_tokens=2000
             )
 
             content = response.choices[0].message.content.strip()
 
-            # Parse JSON response
-            try:
-                # Remove markdown code blocks if present
-                if content.startswith("```json"):
-                    content = content.replace("```json", "").replace("```", "").strip()
-                elif content.startswith("```"):
-                    content = content.replace("```", "").strip()
+            # Parse JSON
+            if content.startswith("```"):
+                content = content.split("```")[1]
+                if content.startswith("json"):
+                    content = content[4:]
+                content = content.strip()
 
-                chapters = json.loads(content)
-            except json.JSONDecodeError as e:
-                raise AINotesServiceError(f"Failed to parse chapters JSON: {str(e)}")
+            ai_titles = json.loads(content)
 
-            # Validate chapters
-            if not isinstance(chapters, list):
-                raise AINotesServiceError("Chapters must be a list")
+            # Build final chapters by combining pre-calculated times with AI titles and summaries
+            chapters = []
+            for i, time_sec in enumerate(chapter_times):
+                # Find matching title and summary from AI response
+                title = "Chapter"
+                summary = ""
+                for item in ai_titles:
+                    if item.get("slot") == i + 1:
+                        title = item.get("title", "Chapter")
+                        summary = item.get("summary", "")
+                        break
 
-            # Reasonable limit to prevent excessive chapters (max 50)
-            chapters = chapters[:50]
+                # Fallback titles
+                if not title or title == "Chapter":
+                    if i == 0:
+                        title = "Introduction"
+                    elif i == len(chapter_times) - 1:
+                        title = "Conclusion"
+                    else:
+                        title = f"Part {i + 1}"
+
+                chapters.append({
+                    "title": title,
+                    "start_time": time_sec,
+                    "summary": summary
+                })
 
             # Calculate end times
             for i in range(len(chapters)):
                 if i < len(chapters) - 1:
-                    # End time is the start of the next chapter
                     chapters[i]["end_time"] = chapters[i + 1]["start_time"]
                 else:
-                    # Last chapter ends at video duration or last segment
-                    if video_duration:
-                        chapters[i]["end_time"] = video_duration
-                    elif segments:
-                        last_segment = segments[-1]
-                        chapters[i]["end_time"] = last_segment.get('start', 0) + last_segment.get('duration', 0)
-                    else:
-                        chapters[i]["end_time"] = chapters[i]["start_time"] + 60  # Default 1 minute
+                    chapters[i]["end_time"] = video_duration
 
             tokens_used = response.usage.total_tokens if hasattr(response, 'usage') else 0
 
@@ -430,3 +420,164 @@ Return the structured JSON response."""
             raise
         except Exception as e:
             raise AINotesServiceError(f"Failed to generate structured notes: {str(e)}")
+
+    def transliterate_to_english(
+        self,
+        segments: List[Dict[str, Any]],
+        source_language: str,
+        model: str = "gpt-3.5-turbo"
+    ) -> Dict[str, Any]:
+        """
+        Transliterate non-English transcript segments to readable English.
+        Uses parallel batch processing for speed.
+
+        Handles both:
+        1. Transliteration: Hindi/other scripts containing phonetic English → Roman English
+           (e.g., "हाई एवरीवन" → "Hi everyone")
+        2. Translation: Actual foreign language content → English meaning
+
+        Uses GPT-3.5-turbo for cost efficiency - this is a lightweight text conversion task.
+        Processes batches in parallel for ~3-4x speed improvement.
+
+        Args:
+            segments: List of transcript segments with text, start, duration
+            source_language: Source language code (e.g., 'hi', 'es', 'fr')
+            model: OpenAI model to use (default: gpt-3.5-turbo for cost)
+
+        Returns:
+            Dictionary containing:
+                - segments: Converted segments with preserved timing
+                - raw_text: Full converted text
+                - tokens_used: Total tokens consumed
+                - was_transliterated: Whether conversion was performed
+        """
+        if not segments:
+            return {"segments": [], "raw_text": "", "tokens_used": 0, "was_transliterated": False}
+
+        # Skip if already in English
+        if source_language.lower().startswith('en'):
+            raw_text = " ".join([seg.get('text', '') for seg in segments])
+            return {"segments": segments, "raw_text": raw_text, "tokens_used": 0, "was_transliterated": False}
+
+        # Batch segments for efficient processing
+        BATCH_SIZE = 100
+        MAX_PARALLEL = 4  # Run up to 4 API calls in parallel
+
+        # Create batches with their indices
+        batches: List[Tuple[int, List[Dict[str, Any]]]] = []
+        for batch_start in range(0, len(segments), BATCH_SIZE):
+            batch = segments[batch_start:batch_start + BATCH_SIZE]
+            batches.append((batch_start, batch))
+
+        print(f"  [Transliteration] Processing {len(segments)} segments in {len(batches)} batches (parallel={MAX_PARALLEL})")
+
+        # Process a single batch
+        def process_batch(batch_info: Tuple[int, List[Dict[str, Any]]]) -> Tuple[int, List[Dict[str, Any]], int]:
+            batch_idx, batch = batch_info
+            batch_results = []
+            tokens = 0
+
+            # Create numbered list for conversion
+            texts_to_convert = []
+            for i, seg in enumerate(batch):
+                texts_to_convert.append(f"{i+1}. {seg.get('text', '')}")
+
+            batch_text = "\n".join(texts_to_convert)
+
+            # Smart prompt that handles both transliteration AND translation
+            system_prompt = """You are a transcript converter. Convert the given text to readable English.
+
+The text might be:
+1. PHONETIC ENGLISH in non-Latin script (like Hindi/Devanagari containing English words spoken phonetically)
+   - Example: "हाई एवरीवन एंड वेलकम" → "Hi everyone and welcome"
+   - This is English SPOKEN but written in Hindi script - convert to Roman letters
+
+2. ACTUAL foreign language content
+   - Translate the meaning to English
+
+RULES:
+- Keep the line numbers (1., 2., etc.)
+- Output readable, natural English
+- Keep the same number of lines
+- Output ONLY the converted numbered list"""
+
+            user_prompt = f"""Convert these {len(batch)} lines to English (transliterate if phonetic English, translate if actual {source_language}):
+
+{batch_text}"""
+
+            try:
+                response = self.client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    temperature=0.2,
+                    max_tokens=4000
+                )
+
+                content = response.choices[0].message.content.strip()
+                tokens = response.usage.total_tokens if hasattr(response, 'usage') else 0
+
+                # Parse converted lines back
+                converted_lines = content.split('\n')
+
+                for i, seg in enumerate(batch):
+                    converted_text = seg.get('text', '')  # Default to original
+
+                    # Find matching converted line
+                    prefix = f"{i+1}."
+                    for line in converted_lines:
+                        line = line.strip()
+                        if line.startswith(prefix):
+                            converted_text = line[len(prefix):].strip()
+                            break
+
+                    batch_results.append({
+                        "text": converted_text,
+                        "start": seg.get('start', 0),
+                        "duration": seg.get('duration', 0)
+                    })
+
+            except Exception as e:
+                # On error, keep original text for this batch
+                print(f"  [Transliteration] Batch {batch_idx} failed: {e}")
+                for seg in batch:
+                    batch_results.append({
+                        "text": seg.get('text', ''),
+                        "start": seg.get('start', 0),
+                        "duration": seg.get('duration', 0)
+                    })
+
+            return (batch_idx, batch_results, tokens)
+
+        # Process batches in parallel
+        results_map: Dict[int, List[Dict[str, Any]]] = {}
+        total_tokens = 0
+
+        with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as executor:
+            futures = {executor.submit(process_batch, batch): batch[0] for batch in batches}
+
+            for future in as_completed(futures):
+                batch_idx, batch_results, tokens = future.result()
+                results_map[batch_idx] = batch_results
+                total_tokens += tokens
+                print(f"  [Transliteration] ✓ Batch at {batch_idx} done ({tokens} tokens)")
+
+        # Reassemble results in order
+        converted_segments = []
+        for batch_start in range(0, len(segments), BATCH_SIZE):
+            if batch_start in results_map:
+                converted_segments.extend(results_map[batch_start])
+
+        # Build raw text from converted segments
+        raw_text = " ".join([seg['text'] for seg in converted_segments])
+
+        print(f"  [Transliteration] ✓ Complete! {len(converted_segments)} segments, {total_tokens} tokens")
+
+        return {
+            "segments": converted_segments,
+            "raw_text": raw_text,
+            "tokens_used": total_tokens,
+            "was_transliterated": True
+        }
