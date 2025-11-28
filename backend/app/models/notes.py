@@ -29,6 +29,9 @@ class Notes(Base):
     markdown_notes = Column(Text, nullable=True)  # Full markdown notes from AI
     chapters = Column(JSONB, nullable=True)  # [{ "title": "...", "start_time": 0.0, "end_time": 10.0, "summary": "..." }, ...]
 
+    # User-saved notes from transcript selections
+    user_notes = Column(JSONB, default=[])  # [{"id": "uuid", "text": "...", "timestamp": 123.5, "created_at": "...", "rewritten_text": null}, ...]
+
     # AI metadata
     raw_llm_output = Column(JSONB, nullable=True)
     notes_model = Column(String(32), nullable=True)  # gpt-4o-mini, etc.

@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     PROXY_URL: str | None = None
     PROXY_LIST: str | None = None
 
+    # Supadata.ai (for YouTube transcripts - primary provider)
+    SUPADATA_API_KEY: str | None = None
+
     # API
     API_V1_PREFIX: str = "/api"
     PROJECT_NAME: str = "NoteTube AI"

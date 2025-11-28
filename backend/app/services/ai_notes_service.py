@@ -74,6 +74,8 @@ class AINotesService:
         # Build prompt
         system_prompt = """You are an expert note-taker. Your task is to create comprehensive, well-structured notes from video transcripts.
 
+IMPORTANT: ALWAYS write notes in ENGLISH, regardless of the transcript's original language. Translate all content to English.
+
 Create notes that:
 - Use clear markdown formatting with headers (##, ###)
 - Organize content into logical sections
@@ -182,6 +184,8 @@ Please provide well-structured markdown notes."""
                 duration_info = f"Video duration: {mins} minutes {secs} seconds ({int(video_duration)} seconds total)"
 
         system_prompt = f"""You are an expert at analyzing video content and creating meaningful chapter breakdowns.
+
+IMPORTANT: ALWAYS write chapter titles and summaries in ENGLISH, regardless of the transcript's original language.
 
 {duration_info}
 
@@ -335,6 +339,8 @@ Return the chapters as a JSON array."""
         timestamp_text = "\n".join(timestamp_context)
 
         system_prompt = """You are an expert educational content analyzer. Analyze video transcripts and generate structured learning materials.
+
+IMPORTANT: ALWAYS write ALL content in ENGLISH, regardless of the transcript's original language. Translate everything to English.
 
 Return a valid JSON object with EXACTLY this structure:
 {

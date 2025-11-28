@@ -1,8 +1,7 @@
 """
 YouTube service for fetching video metadata and transcripts.
 
-Uses yt-dlp for all YouTube operations - more reliable and resilient than
-youtube-transcript-api which gets rate-limited frequently.
+Uses Supadata.ai for transcripts (handles rate limits) and yt-dlp for metadata/fallback.
 """
 import re
 import time
@@ -25,6 +24,10 @@ MAX_RETRIES = 2  # Only retry twice (quick fail)
 INITIAL_RETRY_DELAY = 2  # Start with 2 seconds
 MAX_RETRY_DELAY = 5  # Max 5 seconds between retries
 
+# Supadata.ai configuration (primary transcript provider)
+SUPADATA_API_KEY = os.environ.get('SUPADATA_API_KEY', '')
+SUPADATA_BASE_URL = "https://api.supadata.ai/v1/youtube/transcript"
+
 # User agents for rotation
 USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -33,7 +36,7 @@ USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
 ]
 
-# Proxy configuration
+# Proxy configuration (for fallback yt-dlp method)
 def _get_proxy_list() -> List[str]:
     """Get list of proxies from environment."""
     single_proxy = getattr(settings, 'PROXY_URL', None) or os.environ.get('PROXY_URL')
@@ -47,9 +50,6 @@ def _get_proxy_list() -> List[str]:
     return []
 
 PROXY_LIST = _get_proxy_list()
-
-# Browser to use for cookies (chrome, firefox, safari, edge, opera, brave)
-COOKIES_BROWSER = os.environ.get('YOUTUBE_COOKIES_BROWSER', 'chrome')
 
 
 class YouTubeServiceError(Exception):
@@ -143,7 +143,7 @@ class YouTubeService:
             if PROXY_LIST:
                 proxy = random.choice(PROXY_LIST)
                 ydl_opts['proxy'] = proxy
-                print(f"[YouTube] Using proxy: {proxy[:30]}...")
+                print(f"[YouTube] Using proxy for metadata: {proxy[:30]}...")
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
@@ -169,12 +169,85 @@ class YouTubeService:
         except Exception as e:
             raise YouTubeServiceError(f"Failed to fetch video metadata: {str(e)}")
 
-    def get_transcript(self, video_id: str, language: str = "en") -> Dict[str, Any]:
+    def _get_transcript_supadata(self, video_id: str, language: str = "en") -> Dict[str, Any]:
         """
-        Fetch video transcript using yt-dlp.
+        Fetch transcript using Supadata.ai - handles rate limits automatically.
+        This is the PRIMARY method for fetching transcripts.
+        Cost: 1 credit per transcript ($17/month for 3000 credits)
+        """
+        print(f"[YouTube] Fetching transcript via Supadata.ai for {video_id}")
 
-        Supports multiple languages - GPT-4o handles non-English transcripts directly.
+        params = {
+            'videoId': video_id,
+            'lang': language,
+            'text': 'false'  # Get segments with timestamps
+        }
+
+        headers = {
+            'x-api-key': SUPADATA_API_KEY
+        }
+
+        try:
+            response = requests.get(SUPADATA_BASE_URL, params=params, headers=headers, timeout=30)
+            response.raise_for_status()
+
+            data = response.json()
+
+            # Check for errors
+            if 'error' in data:
+                raise YouTubeServiceError(f"Supadata error: {data.get('message', data.get('error'))}")
+
+            content = data.get('content', [])
+
+            if not content:
+                raise YouTubeServiceError("No transcripts available for this video")
+
+            # Build segments and raw text
+            segments = []
+            raw_text_parts = []
+
+            for item in content:
+                text = item.get('text', '').strip()
+                if text:
+                    # Supadata returns offset in milliseconds, convert to seconds
+                    start_ms = item.get('offset', 0)
+                    duration_ms = item.get('duration', 0)
+                    segments.append({
+                        "text": text,
+                        "start": start_ms / 1000.0,
+                        "duration": duration_ms / 1000.0
+                    })
+                    raw_text_parts.append(text)
+
+            if not segments:
+                raise YouTubeServiceError("Transcript is empty")
+
+            raw_text = " ".join(raw_text_parts)
+            actual_language = data.get('lang', language)
+
+            print(f"[YouTube] Supadata.ai success: {len(segments)} segments")
+
+            return {
+                "language_code": actual_language,
+                "provider": "supadata",
+                "raw_text": raw_text,
+                "segments": segments
+            }
+
+        except requests.exceptions.RequestException as e:
+            raise YouTubeServiceError(f"Supadata request failed: {str(e)}")
+        except Exception as e:
+            if isinstance(e, YouTubeServiceError):
+                raise
+            raise YouTubeServiceError(f"Supadata error: {str(e)}")
+
+    def _get_transcript_ytdlp(self, video_id: str, language: str = "en") -> Dict[str, Any]:
         """
+        Fetch transcript using yt-dlp - FALLBACK method.
+        Only used if SearchAPI.io fails.
+        """
+        print(f"[YouTube] Fallback: Fetching transcript via yt-dlp for {video_id}")
+
         def _fetch_transcript():
             url = f"https://www.youtube.com/watch?v={video_id}"
 
@@ -185,14 +258,14 @@ class YouTubeService:
                 'writeautomaticsub': True,
                 'subtitleslangs': [language, 'en', 'hi', 'es', 'fr', 'de', 'pt'],
                 'user_agent': self._get_random_user_agent(),
-                'ignore_no_formats_error': True,  # We only need captions, not video formats
-                'source_address': '0.0.0.0',  # Force IPv4 to avoid IPv6 rate limits
+                'ignore_no_formats_error': True,
+                'source_address': '0.0.0.0',
             }
 
             if PROXY_LIST:
                 proxy = random.choice(PROXY_LIST)
                 ydl_opts['proxy'] = proxy
-                print(f"[YouTube] Using proxy: {proxy[:30]}...")
+                print(f"[YouTube] Using proxy for transcript: {proxy[:30]}...")
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
@@ -204,11 +277,7 @@ class YouTubeService:
                 provider = "youtube_auto"
                 actual_language = language
 
-                # Simple approach: Get first available caption in native language
-                # GPT-4o handles translation to English, so we don't need English captions
-                # This avoids rate limits from YouTube's auto-translate feature
-
-                # Priority 1: Manual subtitles (more accurate, less rate-limited)
+                # Priority 1: Manual subtitles
                 if subtitles:
                     first_lang = list(subtitles.keys())[0]
                     caption_list = subtitles[first_lang]
@@ -240,7 +309,7 @@ class YouTubeService:
                 if not subtitle_url:
                     raise YouTubeServiceError("Could not find subtitle URL")
 
-                # Fetch and parse subtitles - use same proxy as yt-dlp
+                # Fetch subtitles
                 headers = {'User-Agent': self._get_random_user_agent()}
                 proxies = None
                 if PROXY_LIST:
@@ -249,10 +318,10 @@ class YouTubeService:
                 response = requests.get(subtitle_url, timeout=30, headers=headers, proxies=proxies)
                 response.raise_for_status()
 
-                # Check if response is valid JSON (not HTML error page)
+                # Validate response
                 content_type = response.headers.get('content-type', '')
                 if 'text/html' in content_type or response.text.strip().startswith('<!'):
-                    raise YouTubeServiceError("YouTube returned error page instead of subtitles - may be rate limited")
+                    raise YouTubeServiceError("YouTube returned error page - may be rate limited")
 
                 if not response.text.strip():
                     raise YouTubeServiceError("YouTube returned empty subtitle response")
@@ -260,9 +329,8 @@ class YouTubeService:
                 try:
                     subtitle_data = response.json()
                 except Exception as json_err:
-                    # Log first 200 chars to debug
-                    print(f"[YouTube] Invalid JSON response: {response.text[:200]}")
-                    raise YouTubeServiceError(f"Invalid subtitle data from YouTube: {str(json_err)}")
+                    print(f"[YouTube] Invalid JSON: {response.text[:200]}")
+                    raise YouTubeServiceError(f"Invalid subtitle data: {str(json_err)}")
 
                 segments = []
                 raw_text_parts = []
@@ -298,6 +366,19 @@ class YouTubeService:
             raise
         except Exception as e:
             raise YouTubeServiceError(f"Failed to fetch transcript: {str(e)}")
+
+    def get_transcript(self, video_id: str, language: str = "en") -> Dict[str, Any]:
+        """
+        Fetch video transcript - uses Supadata.ai as primary, yt-dlp as fallback.
+        """
+        # Try Supadata.ai first (handles rate limits, $17/month for 3000 transcripts)
+        try:
+            return self._get_transcript_supadata(video_id, language)
+        except YouTubeServiceError as e:
+            print(f"[YouTube] Supadata.ai failed: {e}, trying yt-dlp fallback...")
+
+        # Fallback to yt-dlp
+        return self._get_transcript_ytdlp(video_id, language)
 
     def process_video_url(self, url: str, language: str = "en") -> Dict[str, Any]:
         """

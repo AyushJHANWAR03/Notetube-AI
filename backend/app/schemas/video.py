@@ -127,3 +127,16 @@ class VideoStatusResponse(BaseModel):
     """Response for video status check."""
     video: VideoBase
     jobs: List[JobStatusSchema]
+
+
+# Seek / "Take Me There" schemas
+class SeekRequest(BaseModel):
+    """Request body for seeking to a topic in video."""
+    query: str = Field(..., min_length=1, max_length=500, description="Search query (any language)")
+
+
+class SeekResponse(BaseModel):
+    """Response for seek request."""
+    timestamp: Optional[float] = Field(None, description="Timestamp in seconds, null if not found")
+    confidence: str = Field(..., description="Confidence level: high, medium, low, or none")
+    matched_text: str = Field("", description="Relevant excerpt from transcript")

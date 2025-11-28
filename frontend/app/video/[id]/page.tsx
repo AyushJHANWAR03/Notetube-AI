@@ -4,10 +4,13 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { videoApi, formatDuration, getYouTubeThumbnail } from '@/lib/videoApi';
-import { VideoDetail, Chapter, Job } from '@/lib/types';
+import { VideoDetail, Chapter, Job, SeekResponse, UserNote } from '@/lib/types';
 import Link from 'next/link';
+import TranscriptPanel from '@/components/video/TranscriptPanel';
+import ChatPanel from '@/components/video/ChatPanel';
+import NotesPanel from '@/components/video/NotesPanel';
 
-type TabType = 'summary' | 'notes' | 'chapters' | 'flashcards' | 'transcript';
+type TabType = 'summary' | 'transcript' | 'chat' | 'notes' | 'chapters' | 'flashcards';
 
 // YouTube Player API types
 declare global {
@@ -64,6 +67,19 @@ export default function VideoDetailPage() {
   const [playerReady, setPlayerReady] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [pollingCount, setPollingCount] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [autoScroll, setAutoScroll] = useState(true);
+
+  // User Notes state
+  const [userNotes, setUserNotes] = useState<UserNote[]>([]);
+  const [savingNote, setSavingNote] = useState(false);
+
+  // Take Me There state
+  const [seekQuery, setSeekQuery] = useState('');
+  const [isSeekSearching, setIsSeekSearching] = useState(false);
+  const [seekResult, setSeekResult] = useState<SeekResponse | null>(null);
+  const [seekError, setSeekError] = useState<string | null>(null);
+  const [seekPopoverOpen, setSeekPopoverOpen] = useState(false);
 
   const playerRef = useRef<YTPlayer | null>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
@@ -217,6 +233,22 @@ export default function VideoDetailPage() {
     });
   }, [video?.youtube_video_id]);
 
+  // Track current video time for transcript sync
+  useEffect(() => {
+    if (!playerReady || !playerRef.current) return;
+
+    const interval = setInterval(() => {
+      try {
+        const time = playerRef.current?.getCurrentTime() || 0;
+        setCurrentTime(time);
+      } catch (e) {
+        // Player might not be ready
+      }
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [playerReady]);
+
   const fetchVideo = async (isPolling = false) => {
     try {
       if (!isPolling) setLoading(true);
@@ -234,6 +266,55 @@ export default function VideoDetailPage() {
     if (playerRef.current && playerReady) {
       playerRef.current.seekTo(seconds, true);
       playerRef.current.playVideo();
+    }
+  };
+
+  // Fetch user notes when video is ready
+  useEffect(() => {
+    if (video?.status === 'READY' && video?.id) {
+      videoApi.getUserNotes(video.id)
+        .then(setUserNotes)
+        .catch(err => console.error('Failed to fetch user notes:', err));
+    }
+  }, [video?.status, video?.id]);
+
+  // Handle saving a note from transcript selection
+  const handleTakeNotes = async (text: string) => {
+    if (!video?.id || savingNote) return;
+
+    setSavingNote(true);
+    try {
+      const note = await videoApi.saveUserNote(video.id, text, currentTime);
+      setUserNotes(prev => [...prev, note].sort((a, b) => a.timestamp - b.timestamp));
+      // Switch to notes tab to show the saved note
+      setActiveTab('notes');
+    } catch (error) {
+      console.error('Failed to save note:', error);
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  // Take Me There search handler
+  const handleSeekSearch = async () => {
+    if (!seekQuery.trim() || !video?.transcript?.segments?.length) return;
+
+    setIsSeekSearching(true);
+    setSeekError(null);
+    setSeekResult(null);
+
+    try {
+      const result = await videoApi.seekToTopic(video.id, seekQuery);
+      setSeekResult(result);
+
+      // Auto-seek if high confidence match found
+      if (result.timestamp !== null && result.confidence === 'high') {
+        seekToTime(result.timestamp);
+      }
+    } catch (err: any) {
+      setSeekError(err.response?.data?.detail || 'Failed to search. Please try again.');
+    } finally {
+      setIsSeekSearching(false);
     }
   };
 
@@ -286,7 +367,7 @@ export default function VideoDetailPage() {
 
   // Render Processing State
   const renderProcessingState = () => (
-    <div className="lg:w-[35%] xl:w-[30%] lg:border-l border-gray-700 bg-gray-800 lg:h-screen flex flex-col items-center justify-center p-8">
+    <div className="lg:w-[40%] xl:w-[38%] lg:border-l border-gray-700 bg-gray-800 lg:h-screen flex flex-col items-center justify-center p-8">
       {/* Animated Processing Indicator */}
       <div className="relative mb-8">
         <div className="w-24 h-24 rounded-full border-4 border-gray-700 border-t-blue-500 animate-spin"></div>
@@ -347,7 +428,7 @@ export default function VideoDetailPage() {
 
   // Render Failed State
   const renderFailedState = () => (
-    <div className="lg:w-[35%] xl:w-[30%] lg:border-l border-gray-700 bg-gray-800 lg:h-screen flex flex-col items-center justify-center p-8">
+    <div className="lg:w-[40%] xl:w-[38%] lg:border-l border-gray-700 bg-gray-800 lg:h-screen flex flex-col items-center justify-center p-8">
       <div className="w-20 h-20 rounded-full bg-red-900/30 flex items-center justify-center mb-6">
         <span className="text-4xl">❌</span>
       </div>
@@ -371,14 +452,15 @@ export default function VideoDetailPage() {
 
     const tabs: { id: TabType; label: string; count?: number }[] = [
       { id: 'summary', label: 'Summary' },
-      { id: 'notes', label: 'Full Notes' },
-      { id: 'chapters', label: 'Chapters', count: notes.chapters?.length },
-      { id: 'flashcards', label: 'Flashcards', count: notes.flashcards?.length },
       { id: 'transcript', label: 'Transcript' },
+      { id: 'chat', label: 'Chat' },
+      { id: 'notes', label: 'Notes', count: userNotes.length > 0 ? userNotes.length : undefined },
+      { id: 'chapters', label: 'Breakdown', count: notes.chapters?.length },
+      { id: 'flashcards', label: 'Flashcards', count: notes.flashcards?.length },
     ];
 
     return (
-      <div className="lg:w-[35%] xl:w-[30%] lg:border-l border-gray-700 bg-gray-800 lg:h-screen lg:overflow-y-auto">
+      <div className="lg:w-[40%] xl:w-[38%] lg:border-l border-gray-700 bg-gray-800 lg:h-screen lg:overflow-y-auto">
         {/* Tabs */}
         <div className="sticky top-0 bg-gray-800 z-10 border-b border-gray-700">
           <nav className="flex overflow-x-auto">
@@ -410,7 +492,7 @@ export default function VideoDetailPage() {
             <div className="space-y-6">
               <div>
                 <h3 className="text-sm font-semibold text-gray-400 mb-2 uppercase tracking-wide">Summary</h3>
-                <p className="text-gray-200 leading-relaxed">{notes.summary}</p>
+                <p className="text-sm text-gray-200 leading-relaxed">{notes.summary}</p>
               </div>
 
               <div>
@@ -419,7 +501,7 @@ export default function VideoDetailPage() {
                   {notes.bullets.map((bullet, i) => (
                     <li key={i} className="flex items-start gap-2">
                       <span className="text-blue-400 mt-1">•</span>
-                      <span className="text-gray-300">{bullet}</span>
+                      <span className="text-sm text-gray-300">{bullet}</span>
                     </li>
                   ))}
                 </ul>
@@ -432,7 +514,7 @@ export default function VideoDetailPage() {
                     {notes.action_items.map((item, i) => (
                       <li key={i} className="flex items-start gap-2">
                         <span className="text-green-400">✓</span>
-                        <span className="text-gray-300">{item}</span>
+                        <span className="text-sm text-gray-300">{item}</span>
                       </li>
                     ))}
                   </ul>
@@ -459,22 +541,14 @@ export default function VideoDetailPage() {
             </div>
           )}
 
-          {/* Full Notes Tab */}
-          {activeTab === 'notes' && notes.markdown_notes && (
-            <div className="prose prose-invert prose-sm max-w-none">
-              <div
-                className="text-gray-300"
-                dangerouslySetInnerHTML={{
-                  __html: notes.markdown_notes
-                    .replace(/^### (.*$)/gm, '<h3 class="text-lg font-semibold mt-4 mb-2 text-white">$1</h3>')
-                    .replace(/^## (.*$)/gm, '<h2 class="text-xl font-bold mt-6 mb-3 text-white">$1</h2>')
-                    .replace(/^# (.*$)/gm, '<h1 class="text-2xl font-bold mt-6 mb-4 text-white">$1</h1>')
-                    .replace(/^\- (.*$)/gm, '<li class="ml-4 text-gray-300">$1</li>')
-                    .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white">$1</strong>')
-                    .replace(/\n\n/g, '</p><p class="mb-3 text-gray-300">')
-                }}
-              />
-            </div>
+          {/* Notes Tab - User saved notes */}
+          {activeTab === 'notes' && (
+            <NotesPanel
+              videoId={video.id}
+              notes={userNotes}
+              onSeek={seekToTime}
+              onNotesChange={setUserNotes}
+            />
           )}
 
           {/* Chapters Tab */}
@@ -540,16 +614,22 @@ export default function VideoDetailPage() {
 
           {/* Transcript Tab */}
           {activeTab === 'transcript' && video.transcript && (
-            <div>
-              <p className="text-gray-400 text-sm mb-4">
-                Language: {video.transcript.language_code} | Provider: {video.transcript.provider}
-              </p>
-              <div className="bg-gray-700 rounded-lg p-4 max-h-[600px] overflow-y-auto">
-                <p className="text-gray-300 whitespace-pre-wrap leading-relaxed text-sm">
-                  {video.transcript.raw_text}
-                </p>
-              </div>
-            </div>
+            <TranscriptPanel
+              segments={video.transcript.segments || []}
+              currentTime={currentTime}
+              onSeek={seekToTime}
+              autoScroll={autoScroll}
+              onToggleAutoScroll={() => setAutoScroll(!autoScroll)}
+              onTakeNotes={handleTakeNotes}
+            />
+          )}
+
+          {/* Chat Tab */}
+          {activeTab === 'chat' && (
+            <ChatPanel
+              videoId={video.id}
+              videoTitle={video.title}
+            />
           )}
         </div>
       </div>
@@ -584,13 +664,13 @@ export default function VideoDetailPage() {
       </header>
 
       {/* Main Content - Video Player + Notes Side by Side */}
-      <div className="max-w-[1800px] mx-auto">
+      <div className="max-w-[1600px] mx-auto">
         <div className="flex flex-col lg:flex-row">
           {/* Left Side - Video Player */}
-          <div className="lg:w-[65%] xl:w-[70%]">
-            {/* Video Player */}
-            <div className="sticky top-0 bg-black">
-              <div ref={playerContainerRef} className="relative w-full" style={{ paddingBottom: '56.25%' }}>
+          <div className="lg:w-[60%] xl:w-[62%]">
+            {/* Video Player - Compact like reference */}
+            <div className="bg-black">
+              <div ref={playerContainerRef} className="relative w-full mx-auto" style={{ paddingBottom: '56.25%', maxHeight: '340px' }}>
                 <div
                   id="youtube-player"
                   className="absolute inset-0 w-full h-full"
@@ -598,49 +678,181 @@ export default function VideoDetailPage() {
               </div>
             </div>
 
-            {/* Video Info - Below Player */}
-            <div className="p-4 bg-gray-800">
-              <h2 className="text-xl font-bold text-white mb-2">{video.title || 'Loading...'}</h2>
-              <div className="flex flex-wrap gap-3 items-center text-sm text-gray-400">
-                {video.duration_seconds && (
-                  <span>Duration: {formatDuration(video.duration_seconds)}</span>
-                )}
-                {isReady && video.notes?.difficulty_level && (
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                    video.notes.difficulty_level === 'beginner' ? 'bg-green-900 text-green-300' :
-                    video.notes.difficulty_level === 'intermediate' ? 'bg-yellow-900 text-yellow-300' :
-                    'bg-red-900 text-red-300'
-                  }`}>
-                    {video.notes.difficulty_level}
-                  </span>
-                )}
-              </div>
-              {isReady && video.notes?.topics && video.notes.topics.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-3">
-                  {video.notes.topics.map((topic, i) => (
-                    <span key={i} className="bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded">
-                      {topic}
+            {/* Video Info - Below Player (Compact) */}
+            <div className="px-4 py-3 bg-gray-800">
+              <div className="flex items-start justify-between gap-4">
+                <h2 className="text-lg font-bold text-white line-clamp-1">{video.title || 'Loading...'}</h2>
+                <div className="flex items-center gap-2 text-sm text-gray-400 shrink-0">
+                  {video.duration_seconds && (
+                    <span>{formatDuration(video.duration_seconds)}</span>
+                  )}
+                  {isReady && video.notes?.difficulty_level && (
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                      video.notes.difficulty_level === 'beginner' ? 'bg-green-900 text-green-300' :
+                      video.notes.difficulty_level === 'intermediate' ? 'bg-yellow-900 text-yellow-300' :
+                      'bg-red-900 text-red-300'
+                    }`}>
+                      {video.notes.difficulty_level}
                     </span>
-                  ))}
+                  )}
+                </div>
+              </div>
+              {/* Topics row with Take Me There button */}
+              {isReady && (
+                <div className="flex items-center justify-between gap-4 mt-2">
+                  {/* Topic tags */}
+                  <div className="flex flex-wrap gap-2 flex-1">
+                    {video.notes?.topics && video.notes.topics.map((topic, i) => (
+                      <span key={i} className="bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded">
+                        {topic}
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Take Me There button with popover */}
+                  {video.transcript?.segments?.length && (
+                    <div className="relative">
+                      <button
+                        onClick={() => setSeekPopoverOpen(!seekPopoverOpen)}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        Take Me There
+                      </button>
+
+                      {/* Popover */}
+                      {seekPopoverOpen && (
+                        <>
+                          {/* Backdrop to close popover */}
+                          <div
+                            className="fixed inset-0 z-40"
+                            onClick={() => setSeekPopoverOpen(false)}
+                          />
+
+                          {/* Popover content */}
+                          <div className="absolute right-0 top-full mt-2 w-80 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                              <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                              </svg>
+                              <span className="text-sm font-medium text-white">Find any moment</span>
+                            </div>
+
+                            {/* Search input */}
+                            <div className="flex gap-2 mb-3">
+                              <input
+                                type="text"
+                                value={seekQuery}
+                                onChange={(e) => setSeekQuery(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && !e.shiftKey) {
+                                    handleSeekSearch();
+                                  }
+                                  if (e.key === 'Escape') {
+                                    setSeekPopoverOpen(false);
+                                  }
+                                }}
+                                placeholder="e.g. 'child selectors'"
+                                disabled={isSeekSearching}
+                                autoFocus
+                                className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                              />
+                              <button
+                                onClick={handleSeekSearch}
+                                disabled={!seekQuery.trim() || isSeekSearching}
+                                className={`px-3 py-2 rounded-lg transition-colors ${
+                                  seekQuery.trim() && !isSeekSearching
+                                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                                    : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                                }`}
+                              >
+                                {isSeekSearching ? (
+                                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                                  </svg>
+                                )}
+                              </button>
+                            </div>
+
+                            {/* Result */}
+                            {seekResult && seekResult.timestamp !== null && (
+                              <button
+                                onClick={() => {
+                                  seekToTime(seekResult.timestamp!);
+                                  setSeekPopoverOpen(false);
+                                }}
+                                className={`w-full text-left p-3 rounded-lg border transition-all hover:scale-[1.01] ${
+                                  seekResult.confidence === 'high'
+                                    ? 'bg-green-900/30 border-green-700 hover:bg-green-900/40'
+                                    : seekResult.confidence === 'medium'
+                                    ? 'bg-yellow-900/30 border-yellow-700 hover:bg-yellow-900/40'
+                                    : 'bg-gray-700/30 border-gray-600 hover:bg-gray-700/40'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="font-mono text-lg text-blue-400 font-bold">
+                                    {formatTimestamp(seekResult.timestamp)}
+                                  </span>
+                                  <span className={`text-xs px-2 py-0.5 rounded ${
+                                    seekResult.confidence === 'high' ? 'text-green-400 bg-green-900/50' :
+                                    seekResult.confidence === 'medium' ? 'text-yellow-400 bg-yellow-900/50' :
+                                    'text-gray-400 bg-gray-700/50'
+                                  }`}>
+                                    {seekResult.confidence === 'high' ? 'Best Match' : seekResult.confidence === 'medium' ? 'Good Match' : 'Partial'}
+                                  </span>
+                                </div>
+                                {seekResult.matched_text && (
+                                  <p className="text-xs text-gray-400 line-clamp-2">"{seekResult.matched_text}"</p>
+                                )}
+                              </button>
+                            )}
+
+                            {/* No match */}
+                            {seekResult && seekResult.timestamp === null && (
+                              <p className="text-sm text-gray-500 text-center py-2">
+                                No match found. Try different keywords.
+                              </p>
+                            )}
+
+                            {/* Error */}
+                            {seekError && (
+                              <p className="text-sm text-red-400 text-center py-2">{seekError}</p>
+                            )}
+
+                            {/* Helper */}
+                            {!seekResult && !seekError && !isSeekSearching && (
+                              <p className="text-xs text-gray-500 text-center">
+                                Search in any language
+                              </p>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
 
             {/* Chapters - Quick Navigation (Only when ready) */}
             {isReady && video.notes?.chapters && video.notes.chapters.length > 0 && (
-              <div className="p-4 bg-gray-850 border-t border-gray-700">
-                <h3 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wide">Chapters</h3>
-                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
+              <div className="px-4 py-2 bg-gray-850 border-t border-gray-700">
+                <h3 className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Chapters</h3>
+                <div className="flex flex-wrap gap-1.5">
                   {video.notes.chapters.map((chapter, i) => (
                     <button
                       key={i}
                       onClick={() => seekToTime(chapter.start_time)}
-                      className="flex items-center gap-2 p-2 rounded hover:bg-gray-700 transition-colors text-left group"
+                      className="flex items-center gap-1.5 px-2 py-1 rounded bg-gray-700/50 hover:bg-gray-700 transition-colors text-left group"
                     >
-                      <span className="text-blue-400 font-mono text-xs whitespace-nowrap">
+                      <span className="text-blue-400 font-mono text-xs">
                         {formatTimestamp(chapter.start_time)}
                       </span>
-                      <span className="text-gray-300 text-sm line-clamp-1 group-hover:text-white">
+                      <span className="text-gray-300 text-xs group-hover:text-white">
                         {chapter.title}
                       </span>
                     </button>
@@ -648,6 +860,7 @@ export default function VideoDetailPage() {
                 </div>
               </div>
             )}
+
           </div>
 
           {/* Right Side - Processing Animation or Notes */}

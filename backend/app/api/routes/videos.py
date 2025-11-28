@@ -17,11 +17,14 @@ from app.schemas.video import (
     VideoStatusResponse,
     NotesSchema,
     TranscriptSchema,
-    JobStatusSchema
+    JobStatusSchema,
+    SeekRequest,
+    SeekResponse
 )
 from app.schemas.user import User
 from app.services.video_processing_service import VideoProcessingService
 from app.services.youtube_service import YouTubeService, YouTubeServiceError
+from app.services.seek_service import SeekService, SeekServiceError
 from app.api.dependencies.auth import get_current_user
 from app.workers.video_processor import enqueue_video_processing
 
@@ -319,3 +322,63 @@ async def reprocess_video(
         job_id=job_id,
         message="Video resubmitted for processing"
     )
+
+
+@router.post("/{video_id}/seek", response_model=SeekResponse)
+async def seek_to_topic(
+    video_id: UUID,
+    request: SeekRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> SeekResponse:
+    """
+    Find the timestamp where a specific topic is discussed.
+
+    Uses AI to understand the query semantically and match it against
+    the video transcript. Supports queries in any language.
+
+    Returns the best matching timestamp with confidence level.
+    """
+    video_service = VideoProcessingService()
+
+    video = await video_service.get_video_by_id(
+        video_id,
+        db,
+        include_relations=True
+    )
+
+    if not video:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Video not found"
+        )
+
+    # Verify ownership
+    if video.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this video"
+        )
+
+    # Check if transcript exists
+    if not video.transcript or not video.transcript.segments:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No transcript available for this video"
+        )
+
+    try:
+        seek_service = SeekService()
+        result = seek_service.find_timestamp(
+            query=request.query,
+            segments=video.transcript.segments,
+            video_duration=video.duration_seconds
+        )
+
+        return SeekResponse(**result)
+
+    except SeekServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
