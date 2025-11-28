@@ -38,7 +38,7 @@ async def health_check():
 
 
 # Import and include routers
-from app.api.routes import auth, videos, user_notes
+from app.api.routes import auth, videos, user_notes, chat
 
 # Include auth routers (no prefix since they define their own)
 app.include_router(auth.router)
@@ -49,3 +49,6 @@ app.include_router(videos.router)
 
 # Include user notes routes
 app.include_router(user_notes.router)
+
+# Include chat routes
+app.include_router(chat.router)

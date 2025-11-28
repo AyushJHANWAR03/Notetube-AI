@@ -22,6 +22,12 @@ from app.prompts.seek_prompts import (
     SEEK_SYSTEM_PROMPT,
     SEEK_USER_PROMPT_TEMPLATE,
 )
+from app.prompts.chat_prompts import (
+    CHAT_SYSTEM_PROMPT,
+    CHAT_USER_PROMPT_TEMPLATE,
+    SUGGESTED_PROMPTS_SYSTEM_PROMPT,
+    SUGGESTED_PROMPTS_USER_TEMPLATE,
+)
 
 __all__ = [
     # Notes generation
@@ -41,4 +47,9 @@ __all__ = [
     # Seek/search
     "SEEK_SYSTEM_PROMPT",
     "SEEK_USER_PROMPT_TEMPLATE",
+    # Chat
+    "CHAT_SYSTEM_PROMPT",
+    "CHAT_USER_PROMPT_TEMPLATE",
+    "SUGGESTED_PROMPTS_SYSTEM_PROMPT",
+    "SUGGESTED_PROMPTS_USER_TEMPLATE",
 ]

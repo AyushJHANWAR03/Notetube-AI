@@ -415,7 +415,8 @@ class VideoProcessingService:
         notes_tokens: int,
         chapters_tokens: int,
         was_truncated: bool = False,
-        raw_llm_output: Optional[Dict[str, Any]] = None
+        raw_llm_output: Optional[Dict[str, Any]] = None,
+        suggested_prompts: Optional[List[str]] = None
     ) -> Notes:
         """
         Save AI-generated notes for a video.
@@ -456,7 +457,8 @@ class VideoProcessingService:
             notes_tokens=notes_tokens,
             chapters_tokens=chapters_tokens,
             was_truncated="Y" if was_truncated else "N",
-            raw_llm_output=raw_llm_output
+            raw_llm_output=raw_llm_output,
+            suggested_prompts=suggested_prompts
         )
         db.add(notes)
         await db.commit()

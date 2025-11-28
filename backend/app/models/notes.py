@@ -32,6 +32,9 @@ class Notes(Base):
     # User-saved notes from transcript selections
     user_notes = Column(JSONB, default=[])  # [{"id": "uuid", "text": "...", "timestamp": 123.5, "created_at": "...", "rewritten_text": null}, ...]
 
+    # AI-suggested chat prompts
+    suggested_prompts = Column(JSONB, nullable=True)  # ["prompt1", "prompt2", "prompt3"]
+
     # AI metadata
     raw_llm_output = Column(JSONB, nullable=True)
     notes_model = Column(String(32), nullable=True)  # gpt-4o-mini, etc.

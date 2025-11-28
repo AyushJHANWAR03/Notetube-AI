@@ -74,6 +74,7 @@ class NotesSchema(BaseModel):
     difficulty_level: str
     markdown_notes: Optional[str] = None
     chapters: Optional[List[ChapterSchema]] = None
+    suggested_prompts: Optional[List[str]] = None
 
     model_config = {"from_attributes": True}
 

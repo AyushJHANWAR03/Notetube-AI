@@ -21,6 +21,7 @@ from app.core.config import settings
 from app.services.youtube_service import YouTubeService, YouTubeServiceError
 from app.services.ai_notes_service import AINotesService, AINotesServiceError
 from app.services.video_processing_service import VideoProcessingService
+from app.services.chat_service import ChatService, ChatServiceError
 
 # Cooldown between YouTube API calls to avoid rate limits
 YOUTUBE_COOLDOWN_SECONDS = 3
@@ -237,6 +238,24 @@ async def _process_video_async(
             )
             print(f"[STEP 5/7] ✓ AI content generated")
 
+            # Step 3.5: Generate suggested chat prompts
+            print(f"[STEP 5.5/7] Generating suggested chat prompts...")
+            suggested_prompts = []
+            try:
+                chat_service = ChatService()
+                suggested_prompts = chat_service.generate_suggested_prompts(
+                    summary=ai_results["structured"]["summary"],
+                    topics=ai_results["structured"]["topics"],
+                    chapters=ai_results["chapters"]["chapters"]
+                )
+                print(f"[STEP 5.5/7] ✓ Generated {len(suggested_prompts)} suggested prompts")
+            except ChatServiceError as e:
+                print(f"[STEP 5.5/7] ⚠ Could not generate suggested prompts: {e}")
+                # Non-fatal error, continue without suggested prompts
+            except Exception as e:
+                print(f"[STEP 5.5/7] ⚠ Unexpected error generating prompts: {e}")
+                # Non-fatal error, continue without suggested prompts
+
             # Step 3: Save notes to database
             print(f"[STEP 6/7] Saving AI-generated notes to database...")
             print(f"  - Summary length: {len(ai_results['structured']['summary'])} chars")
@@ -265,7 +284,9 @@ async def _process_video_async(
                 raw_llm_output={
                     "chapters": ai_results["chapters"],
                     "structured": ai_results["structured"]
-                }
+                },
+                # Chat suggested prompts
+                suggested_prompts=suggested_prompts if suggested_prompts else None
             )
             print(f"[STEP 6/7] ✓ Notes saved to database")
 

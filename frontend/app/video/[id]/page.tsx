@@ -74,6 +74,9 @@ export default function VideoDetailPage() {
   const [userNotes, setUserNotes] = useState<UserNote[]>([]);
   const [savingNote, setSavingNote] = useState(false);
 
+  // Chat state for explain flow
+  const [pendingChatMessage, setPendingChatMessage] = useState<string | null>(null);
+
   // Take Me There state
   const [seekQuery, setSeekQuery] = useState('');
   const [isSeekSearching, setIsSeekSearching] = useState(false);
@@ -307,6 +310,12 @@ export default function VideoDetailPage() {
     }
   };
 
+  // Handle explain from transcript - switch to chat tab with the selected text
+  const handleExplain = (text: string) => {
+    setPendingChatMessage(text);
+    setActiveTab('chat');
+  };
+
   // Take Me There search handler
   const handleSeekSearch = async () => {
     if (!seekQuery.trim() || !video?.transcript?.segments?.length) return;
@@ -482,9 +491,9 @@ export default function VideoDetailPage() {
     ];
 
     return (
-      <div className="lg:w-[40%] xl:w-[38%] lg:border-l border-gray-700 bg-gray-800 lg:h-screen lg:overflow-y-auto">
+      <div className="lg:w-[40%] xl:w-[38%] lg:border-l border-gray-700 bg-gray-800 h-[calc(100vh-60px)] lg:h-screen flex flex-col overflow-hidden">
         {/* Tabs */}
-        <div className="sticky top-0 bg-gray-800 z-10 border-b border-gray-700">
+        <div className="flex-shrink-0 bg-gray-800 z-10 border-b border-gray-700">
           <nav className="flex overflow-x-auto">
             {tabs.map((tab) => (
               <button
@@ -508,7 +517,7 @@ export default function VideoDetailPage() {
         </div>
 
         {/* Tab Content */}
-        <div className="p-4">
+        <div className={`flex-1 min-h-0 ${activeTab === 'chat' ? '' : 'overflow-y-auto p-4'}`}>
           {/* Summary Tab */}
           {activeTab === 'summary' && (
             <div className="space-y-6">
@@ -643,6 +652,7 @@ export default function VideoDetailPage() {
               autoScroll={autoScroll}
               onToggleAutoScroll={() => setAutoScroll(!autoScroll)}
               onTakeNotes={handleTakeNotes}
+              onExplain={handleExplain}
             />
           )}
 
@@ -651,6 +661,9 @@ export default function VideoDetailPage() {
             <ChatPanel
               videoId={video.id}
               videoTitle={video.title}
+              suggestedPrompts={notes.suggested_prompts}
+              pendingMessage={pendingChatMessage || undefined}
+              onPendingMessageHandled={() => setPendingChatMessage(null)}
             />
           )}
         </div>

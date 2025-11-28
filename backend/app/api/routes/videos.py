@@ -183,7 +183,8 @@ async def get_video(
             "topics": video.notes.topics,
             "difficulty_level": video.notes.difficulty_level,
             "markdown_notes": video.notes.markdown_notes,
-            "chapters": video.notes.chapters
+            "chapters": video.notes.chapters,
+            "suggested_prompts": video.notes.suggested_prompts
         }
 
     if video.transcript:
