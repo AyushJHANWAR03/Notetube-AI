@@ -23,7 +23,6 @@ class User(Base):
 
     # Relationships
     videos = relationship("Video", back_populates="user", cascade="all, delete-orphan")
-    quiz_sessions = relationship("QuizSession", back_populates="user", cascade="all, delete-orphan")
     chat_messages = relationship("ChatMessage", back_populates="user", cascade="all, delete-orphan")
     exports = relationship("Export", back_populates="user", cascade="all, delete-orphan")
 

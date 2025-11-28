@@ -23,10 +23,10 @@ class Settings(BaseSettings):
     # OpenAI
     OPENAI_API_KEY: str
 
-    # Firebase
-    FIREBASE_PROJECT_ID: str
-    FIREBASE_STORAGE_BUCKET: str
-    FIREBASE_CREDENTIALS_PATH: str
+    # Firebase (for PDF storage)
+    FIREBASE_PROJECT_ID: str | None = None
+    FIREBASE_STORAGE_BUCKET: str | None = None
+    FIREBASE_CREDENTIALS_PATH: str | None = None
 
     # App
     FRONTEND_URL: str

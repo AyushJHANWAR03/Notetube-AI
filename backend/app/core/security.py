@@ -1,17 +1,13 @@
 """
-Security utilities for JWT token generation and password hashing.
+Security utilities for JWT token generation.
 """
 from datetime import datetime, timedelta
-from typing import Optional, Union
+from typing import Optional
 from uuid import UUID
 
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.core.config import settings
-
-# Password hashing context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -66,30 +62,3 @@ def verify_token(token: str) -> Optional[dict]:
         return payload
     except JWTError:
         return None
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """
-    Verify a plain password against a hashed password.
-
-    Args:
-        plain_password: Plain text password
-        hashed_password: Hashed password from database
-
-    Returns:
-        True if password matches, False otherwise
-    """
-    return pwd_context.verify(plain_password, hashed_password)
-
-
-def get_password_hash(password: str) -> str:
-    """
-    Hash a password using bcrypt.
-
-    Args:
-        password: Plain text password
-
-    Returns:
-        Hashed password string
-    """
-    return pwd_context.hash(password)

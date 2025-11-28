@@ -13,6 +13,7 @@ from app.models.video import Video
 from app.models.transcript import Transcript
 from app.models.notes import Notes
 from app.models.job import Job
+from app.core.constants import VideoStatus, JobStatus, JobType
 
 
 class VideoProcessingServiceError(Exception):
@@ -23,22 +24,22 @@ class VideoProcessingServiceError(Exception):
 class VideoProcessingService:
     """Service for video processing database operations."""
 
-    # Video status constants
-    STATUS_PENDING = "PENDING"
-    STATUS_PROCESSING = "PROCESSING"
-    STATUS_READY = "READY"
-    STATUS_FAILED = "FAILED"
+    # Video status constants (using centralized constants)
+    STATUS_PENDING = VideoStatus.PENDING
+    STATUS_PROCESSING = VideoStatus.PROCESSING
+    STATUS_READY = VideoStatus.READY
+    STATUS_FAILED = VideoStatus.FAILED
 
     # Job type constants
-    JOB_TYPE_VIDEO_PROCESS = "VIDEO_PROCESS"
-    JOB_TYPE_PDF_EXPORT = "PDF_EXPORT"
+    JOB_TYPE_VIDEO_PROCESS = JobType.VIDEO_PROCESS
+    JOB_TYPE_PDF_EXPORT = JobType.PDF_EXPORT
 
     # Job status constants
-    JOB_PENDING = "PENDING"
-    JOB_FETCHING_TRANSCRIPT = "FETCHING_TRANSCRIPT"
-    JOB_GENERATING_NOTES = "GENERATING_NOTES"
-    JOB_COMPLETED = "COMPLETED"
-    JOB_FAILED = "FAILED"
+    JOB_PENDING = JobStatus.PENDING
+    JOB_FETCHING_TRANSCRIPT = JobStatus.FETCHING_TRANSCRIPT
+    JOB_GENERATING_NOTES = JobStatus.GENERATING_NOTES
+    JOB_COMPLETED = JobStatus.COMPLETED
+    JOB_FAILED = JobStatus.FAILED
 
     async def create_video(
         self,

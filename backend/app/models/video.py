@@ -31,8 +31,6 @@ class Video(Base):
     jobs = relationship("Job", back_populates="video", cascade="all, delete-orphan")
     transcript = relationship("Transcript", back_populates="video", uselist=False, cascade="all, delete-orphan")
     notes = relationship("Notes", back_populates="video", uselist=False, cascade="all, delete-orphan")
-    quiz_questions = relationship("QuizQuestion", back_populates="video", cascade="all, delete-orphan")
-    quiz_sessions = relationship("QuizSession", back_populates="video", cascade="all, delete-orphan")
     chat_messages = relationship("ChatMessage", back_populates="video", cascade="all, delete-orphan")
     exports = relationship("Export", back_populates="video", cascade="all, delete-orphan")
 

@@ -7,6 +7,8 @@ import json
 from openai import OpenAI
 
 from app.core.config import settings
+from app.core.constants import AIModels
+from app.prompts import SEEK_SYSTEM_PROMPT, SEEK_USER_PROMPT_TEMPLATE
 
 
 class SeekServiceError(Exception):
@@ -40,7 +42,7 @@ class SeekService:
         query: str,
         segments: List[Dict[str, Any]],
         video_duration: Optional[float] = None,
-        model: str = "gpt-3.5-turbo"
+        model: str = AIModels.SEEK_MODEL
     ) -> Dict[str, Any]:
         """
         Find the best matching timestamp for a user query.
@@ -68,43 +70,19 @@ class SeekService:
         total_mins = int(video_duration // 60) if video_duration else 0
         total_secs = int(video_duration % 60) if video_duration else 0
 
-        system_prompt = """You are a video search assistant. Given a search query and a video index, find where the topic is discussed.
-
-TASK: Look at each time slot's content and find the BEST match for the user's query.
-
-RULES:
-- Search the ENTIRE index, not just the beginning
-- The query may be in ANY language - understand the meaning
-- Pick the slot where the topic is MOST CLEARLY discussed
-- If topic appears multiple times, pick the FIRST occurrence
-
-Return ONLY valid JSON:
-{
-  "slot_id": <number or null if not found>,
-  "confidence": "high" | "medium" | "low" | "none",
-  "reason": "<brief explanation, max 50 chars>"
-}
-
-Confidence:
-- "high": exact topic match found
-- "medium": related topic found
-- "low": weak/tangential match
-- "none": topic not in video (slot_id should be null)"""
-
-        user_prompt = f"""Find where this topic is discussed in the {total_mins}:{total_secs:02d} video:
-
-Query: "{query}"
-
-Search through ALL {len(search_index)} time slots below:
-{index_text}
-
-Which slot best matches the query?"""
+        user_prompt = SEEK_USER_PROMPT_TEMPLATE.format(
+            total_mins=total_mins,
+            total_secs=total_secs,
+            query=query,
+            num_slots=len(search_index),
+            index_text=index_text
+        )
 
         try:
             response = self.client.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": SEEK_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.2,  # Low temperature for consistency

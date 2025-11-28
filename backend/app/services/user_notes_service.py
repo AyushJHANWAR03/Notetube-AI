@@ -10,23 +10,16 @@ from sqlalchemy import select
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.config import settings
+from app.core.constants import AIModels
 from app.models.notes import Notes
 from app.models.video import Video
+from app.prompts import REWRITE_PROMPTS
+from app.prompts.rewrite_prompts import REWRITE_SYSTEM_PROMPT
 
 
 class UserNotesServiceError(Exception):
     """Custom exception for User Notes service errors."""
     pass
-
-
-# Rewrite style prompts
-REWRITE_PROMPTS = {
-    "simplify": "Rewrite this in simpler, easier to understand language. Keep the same meaning but use simpler words and shorter sentences:",
-    "summarize": "Summarize this in 1-2 concise sentences while keeping the key information:",
-    "formal": "Rewrite this in formal, professional language suitable for academic or business contexts:",
-    "bullet_points": "Convert this into clear, concise bullet points:",
-    "explain": "Explain this concept as if teaching a beginner who has no prior knowledge. Be clear and thorough:"
-}
 
 
 class UserNotesService:
@@ -178,7 +171,7 @@ class UserNotesService:
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a helpful assistant that rewrites text according to specific instructions. Keep the core meaning intact. Respond only with the rewritten text, no explanations."
+                        "content": REWRITE_SYSTEM_PROMPT
                     },
                     {
                         "role": "user",

@@ -1,0 +1,44 @@
+"""
+Centralized prompts for all AI services.
+"""
+from app.prompts.notes_prompts import (
+    NOTES_SYSTEM_PROMPT,
+    NOTES_USER_PROMPT_TEMPLATE,
+)
+from app.prompts.chapters_prompts import (
+    CHAPTERS_SYSTEM_PROMPT,
+    CHAPTERS_USER_PROMPT_TEMPLATE,
+)
+from app.prompts.structured_notes_prompts import (
+    STRUCTURED_NOTES_SYSTEM_PROMPT,
+    STRUCTURED_NOTES_USER_PROMPT_TEMPLATE,
+)
+from app.prompts.transliteration_prompts import (
+    TRANSLITERATION_SYSTEM_PROMPT,
+    TRANSLITERATION_USER_PROMPT_TEMPLATE,
+)
+from app.prompts.rewrite_prompts import REWRITE_PROMPTS
+from app.prompts.seek_prompts import (
+    SEEK_SYSTEM_PROMPT,
+    SEEK_USER_PROMPT_TEMPLATE,
+)
+
+__all__ = [
+    # Notes generation
+    "NOTES_SYSTEM_PROMPT",
+    "NOTES_USER_PROMPT_TEMPLATE",
+    # Chapters generation
+    "CHAPTERS_SYSTEM_PROMPT",
+    "CHAPTERS_USER_PROMPT_TEMPLATE",
+    # Structured notes
+    "STRUCTURED_NOTES_SYSTEM_PROMPT",
+    "STRUCTURED_NOTES_USER_PROMPT_TEMPLATE",
+    # Transliteration
+    "TRANSLITERATION_SYSTEM_PROMPT",
+    "TRANSLITERATION_USER_PROMPT_TEMPLATE",
+    # Rewrite styles
+    "REWRITE_PROMPTS",
+    # Seek/search
+    "SEEK_SYSTEM_PROMPT",
+    "SEEK_USER_PROMPT_TEMPLATE",
+]
