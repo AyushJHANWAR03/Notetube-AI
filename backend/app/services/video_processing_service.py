@@ -13,6 +13,7 @@ from app.models.video import Video
 from app.models.transcript import Transcript
 from app.models.notes import Notes
 from app.models.job import Job
+from app.models.user import User
 from app.core.constants import VideoStatus, JobStatus, JobType
 
 
@@ -522,3 +523,23 @@ class VideoProcessingService:
             Existing Video if found, None otherwise
         """
         return await self.get_video_by_youtube_id(user_id, youtube_video_id, db)
+
+    async def increment_user_videos_analyzed(
+        self,
+        user_id: UUID,
+        db: AsyncSession
+    ) -> None:
+        """
+        Increment the videos_analyzed counter for a user.
+
+        Called after successful video processing.
+
+        Args:
+            user_id: User's UUID
+            db: Database session
+        """
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if user:
+            user.videos_analyzed += 1
+            await db.commit()

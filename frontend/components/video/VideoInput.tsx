@@ -95,7 +95,7 @@ export default function VideoInput({ onVideoSubmitted, onBeforeSubmit, disabled 
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
-                Generate Notes
+                Analyze Video
               </>
             )}
           </button>
@@ -122,8 +122,8 @@ export default function VideoInput({ onVideoSubmitted, onBeforeSubmit, disabled 
             }}
           />
           <div>
-            <p className="text-sm text-gray-400">Video ID: <span className="text-gray-300">{preview.videoId}</span></p>
-            <p className="text-xs text-gray-500 mt-1">Click "Generate Notes" to start processing</p>
+            <p className="text-sm text-gray-300">Video detected</p>
+            <p className="text-xs text-gray-500 mt-1">Click "Analyze Video" to start</p>
           </div>
         </div>
       )}

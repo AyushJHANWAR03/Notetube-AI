@@ -27,6 +27,8 @@ class User(UserBase):
     """Complete user schema with all database fields."""
     id: UUID
     google_sub: str
+    videos_analyzed: int = 0
+    video_limit: int = 5
     created_at: datetime
     updated_at: datetime
 

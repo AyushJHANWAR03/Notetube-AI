@@ -47,11 +47,11 @@ interface YTPlayer {
 
 // Processing steps for animation
 const processingSteps = [
-  { id: 'fetch', label: 'Fetching video data', icon: '📥' },
-  { id: 'transcript', label: 'Extracting transcript', icon: '📝' },
-  { id: 'notes', label: 'Generating AI notes', icon: '🤖' },
-  { id: 'chapters', label: 'Creating chapters', icon: '📚' },
-  { id: 'flashcards', label: 'Building flashcards', icon: '🎴' },
+  { id: 'fetch', label: 'Fetching video data' },
+  { id: 'transcript', label: 'Extracting transcript' },
+  { id: 'notes', label: 'Generating AI insights' },
+  { id: 'chapters', label: 'Creating chapters' },
+  { id: 'flashcards', label: 'Building flashcards' },
 ];
 
 export default function VideoDetailPage() {
@@ -394,13 +394,15 @@ export default function VideoDetailPage() {
       <div className="relative mb-8">
         <div className="w-24 h-24 rounded-full border-4 border-gray-700 border-t-blue-500 animate-spin"></div>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-3xl">{processingSteps[currentStep].icon}</span>
+          <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
         </div>
       </div>
 
       {/* Status Text */}
       <h3 className="text-xl font-semibold text-white mb-2">
-        Generating Your Notes
+        Analyzing Video
       </h3>
       <p className="text-gray-400 text-center mb-8">
         {processingSteps[currentStep].label}...
@@ -419,8 +421,20 @@ export default function VideoDetailPage() {
                 : 'bg-gray-700/30 border border-gray-700'
             }`}
           >
-            <span className="text-lg">{step.icon}</span>
-            <span className={`text-sm ${
+            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
+              index < currentStep
+                ? 'bg-green-500 text-white'
+                : index === currentStep
+                ? 'bg-blue-500 text-white'
+                : 'bg-gray-600 text-gray-400'
+            }`}>
+              {index < currentStep ? (
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+              ) : index + 1}
+            </span>
+            <span className={`text-sm flex-1 ${
               index === currentStep
                 ? 'text-blue-300'
                 : index < currentStep
@@ -429,9 +443,6 @@ export default function VideoDetailPage() {
             }`}>
               {step.label}
             </span>
-            {index < currentStep && (
-              <span className="ml-auto text-green-400">✓</span>
-            )}
             {index === currentStep && (
               <span className="ml-auto">
                 <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>

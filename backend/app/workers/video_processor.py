@@ -305,6 +305,9 @@ async def _process_video_async(
                 db
             )
 
+            # Increment user's videos_analyzed counter
+            await video_service.increment_user_videos_analyzed(user_id, db)
+
             total_tokens = (
                 ai_results["chapters"]["tokens_used"] +
                 ai_results["structured"]["tokens_used"] +

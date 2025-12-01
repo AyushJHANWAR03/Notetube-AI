@@ -10,6 +10,7 @@ from app.core.security import create_access_token
 from app.schemas.auth import GoogleUserInfo
 from app.schemas.user import User, UserCreate
 from app.services.user_service import UserService
+from app.services.email_service import email_service
 
 
 class AuthService:
@@ -80,7 +81,7 @@ class AuthService:
             user_data = response.json()
             return GoogleUserInfo(**user_data)
 
-    async def get_or_create_user(self, google_user: GoogleUserInfo, db: AsyncSession) -> User:
+    async def get_or_create_user(self, google_user: GoogleUserInfo, db: AsyncSession) -> tuple[User, bool]:
         """
         Get existing user or create new user from Google info.
 
@@ -89,13 +90,13 @@ class AuthService:
             db: Database session
 
         Returns:
-            User object
+            Tuple of (User object, is_new_user boolean)
         """
         # Try to find existing user by Google sub
         user = await self.user_service.get_user_by_google_sub(google_user.sub, db)
 
         if user:
-            return user
+            return user, False
 
         # Create new user
         user_data = UserCreate(
@@ -105,7 +106,8 @@ class AuthService:
             google_sub=google_user.sub
         )
 
-        return await self.user_service.create_user(user_data, db)
+        new_user = await self.user_service.create_user(user_data, db)
+        return new_user, True
 
     async def create_token_for_user(self, user: User) -> str:
         """
@@ -149,7 +151,14 @@ class AuthService:
         google_user = await self.get_google_user_info(google_access_token)
 
         # Get or create user in database
-        user = await self.get_or_create_user(google_user, db)
+        user, is_new_user = await self.get_or_create_user(google_user, db)
+
+        # Send welcome email to new users (don't block auth flow if it fails)
+        if is_new_user:
+            try:
+                await email_service.send_welcome_email(user.email, user.name or "there")
+            except Exception:
+                pass  # Email failure should never block sign-in
 
         # Create JWT token
         jwt_token = await self.create_token_for_user(user)

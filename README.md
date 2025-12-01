@@ -1,53 +1,50 @@
-# NoteTube AI - YouTube Smart Notes Hub
+# NoteTube AI
 
-Transform YouTube videos into complete learning experiences with AI-generated notes, quizzes, flashcards, and interactive features.
+Transform YouTube videos into complete learning experiences with AI-powered notes, smart chapters, flashcards, and more.
+
+**Live**: [notetubeai.in](https://notetubeai.in)
 
 ## Features
 
-- **AI-Powered Notes**: Automatic summaries, bullet points, and key timestamps
-- **Interactive Learning**: Quizzes, interview mode, and flashcards
-- **Chat with Video**: Ask questions about the video content
-- **Export Options**: PDF and Markdown exports
-- **Personal Library**: Track all your processed videos
+- **Take Me There** - AI semantic search to find any moment in the video
+- **Transcript** - Full searchable transcript with timestamps and auto-scroll
+- **User Notes** - Save selections from transcript and rewrite with AI
+- **Chat** - Chat with AI about video content and get instant answers
+- **Breakdown** - AI-generated chapters with summaries for easy navigation
+- **Flashcards** - Auto-generated flashcards to test your knowledge
 
 ## Tech Stack
 
-### Backend
-- FastAPI (Python 3.11+)
-- PostgreSQL
-- Redis
-- SQLAlchemy + Alembic
-- OpenAI API
-- Google OAuth
+| Layer | Technology |
+|-------|------------|
+| Backend | FastAPI, Python 3.12 |
+| Frontend | Next.js 14, TypeScript, Tailwind CSS |
+| Database | PostgreSQL 16 |
+| Queue | Redis + RQ Workers |
+| AI | OpenAI GPT-4 |
+| Auth | Google OAuth + JWT |
+| Email | Resend |
+| Transcripts | Supadata.ai |
 
-### Frontend
-- Next.js 14 (App Router)
-- TypeScript
-- Tailwind CSS
-- React
-
-## Getting Started
+## Local Development
 
 ### Prerequisites
-
-- Python 3.11+
+- Python 3.12+
 - Node.js 18+
 - Docker & Docker Compose
+- PostgreSQL 16 (or use Docker)
 
-### 1. Clone and Setup
+### 1. Clone & Setup
 
 ```bash
-cd "NoteTube AI"
+git clone https://github.com/yourusername/notetube-ai.git
+cd notetube-ai
 ```
 
-### 2. Start Infrastructure
+### 2. Start Database & Redis
 
 ```bash
-# Start Postgres, Redis, and pgAdmin
 docker-compose up -d
-
-# Check containers are running
-docker-compose ps
 ```
 
 ### 3. Backend Setup
@@ -56,23 +53,32 @@ docker-compose ps
 cd backend
 
 # Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+python3 -m venv venv
+source venv/bin/activate
 
 # Install dependencies
-pip install -r requirements-dev.txt
+pip install -r requirements.txt
+
+# Copy environment file and configure
+cp .env.example .env
+# Edit .env with your API keys
 
 # Run migrations
 alembic upgrade head
 
-# Start development server
-uvicorn app.main:app --reload
+# Start server
+uvicorn app.main:app --reload --port 8000
 ```
 
-Backend will be available at: http://localhost:8000
-API Docs: http://localhost:8000/api/docs
+### 4. Start Worker (separate terminal)
 
-### 4. Frontend Setup
+```bash
+cd backend
+source venv/bin/activate
+python -m rq.cli worker video_processing --url redis://localhost:6379/0
+```
+
+### 5. Frontend Setup
 
 ```bash
 cd frontend
@@ -80,103 +86,82 @@ cd frontend
 # Install dependencies
 npm install
 
-# Start development server
+# Copy environment file
+cp .env.example .env.local
+# Edit .env.local with your settings
+
+# Start dev server
 npm run dev
 ```
 
-Frontend will be available at: http://localhost:3000
-
-### 5. Access pgAdmin (Optional)
-
-- URL: http://localhost:5050
-- Email: admin@notetube.com
-- Password: admin123
-
-Add server:
-- Host: postgres
-- Port: 5432
-- Database: notetube_db
-- Username: notetube
-- Password: notetube123
+### Access Points
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:8000
+- **API Docs**: http://localhost:8000/api/docs
 
 ## Environment Variables
 
-Backend `.env` is already configured with development credentials.
+### Backend (.env)
 
-For production, update:
-- JWT_SECRET_KEY
-- Database credentials
-- Firebase credentials (download service account JSON)
+```env
+# Database
+DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5433/notetube_db
 
-## Running Tests
+# Redis
+REDIS_URL=redis://localhost:6379/0
 
-### Backend Tests
+# JWT
+JWT_SECRET_KEY=your-secret-key
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=1440
 
-```bash
-cd backend
-pytest                          # Run all tests
-pytest --cov=app                # With coverage
-pytest tests/unit -v            # Unit tests only
-pytest tests/integration -v     # Integration tests only
+# Google OAuth
+GOOGLE_CLIENT_ID=your-client-id
+GOOGLE_CLIENT_SECRET=your-client-secret
+GOOGLE_REDIRECT_URI=http://localhost:8000/auth/google/callback
+
+# OpenAI
+OPENAI_API_KEY=sk-...
+
+# Supadata (transcripts)
+SUPADATA_API_KEY=sd_...
+
+# Resend (emails)
+RESEND_API_KEY=re_...
+RESEND_FROM_DOMAIN=yourdomain.com
+
+# App URLs
+FRONTEND_URL=http://localhost:3000
+BACKEND_URL=http://localhost:8000
+ENVIRONMENT=development
 ```
 
-### Frontend Tests
+### Frontend (.env.local)
 
-```bash
-cd frontend
-npm test                        # Run tests
-npm test -- --watch             # Watch mode
-npm test -- --coverage          # With coverage
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-client-id
 ```
 
-## Development Workflow
+## Production Deployment
 
-We follow a **TDD + Feature-by-Feature** approach:
+### Backend (Railway/Render)
+1. Set all environment variables
+2. Deploy command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+3. Run migrations: `alembic upgrade head`
+4. Deploy worker separately: `python -m rq.cli worker video_processing`
 
-1. **Backend First**: Implement API endpoint + tests
-2. **Frontend Second**: Build UI consuming the API
-3. **Integration**: Test end-to-end flow
-
-### Current Phase: Phase 2 - Authentication
-
-Next steps:
-- [ ] Backend: Google OAuth integration
-- [ ] Backend: JWT token management
-- [ ] Backend: Auth endpoints
-- [ ] Frontend: Login page
-- [ ] Frontend: Auth context
-- [ ] Tests: Auth flow
-
-## Project Structure
-
-```
-NoteTube-AI/
-├── backend/          # FastAPI backend
-│   ├── app/
-│   │   ├── api/      # API routes
-│   │   ├── core/     # Config, database
-│   │   ├── models/   # SQLAlchemy models
-│   │   ├── schemas/  # Pydantic schemas
-│   │   ├── services/ # Business logic
-│   │   └── workers/  # Background jobs
-│   ├── tests/        # Pytest tests
-│   └── alembic/      # Database migrations
-├── frontend/         # Next.js frontend
-└── docker-compose.yml
-```
+### Frontend (Vercel)
+1. Connect GitHub repository
+2. Set environment variables
+3. Build command: `npm run build`
+4. Output directory: `.next`
 
 ## API Documentation
 
-Once the backend is running, visit:
-- Swagger UI: http://localhost:8000/api/docs
-- ReDoc: http://localhost:8000/api/redoc
-
-## Contributing
-
-This is a learning project. Feel free to:
-- Report bugs
-- Suggest features
-- Submit pull requests
+Once running, visit:
+- **Swagger UI**: http://localhost:8000/api/docs
+- **ReDoc**: http://localhost:8000/api/redoc
 
 ## License
 
@@ -184,4 +169,4 @@ MIT
 
 ---
 
-**Built with ❤️ using FastAPI, Next.js, and OpenAI**
+Built by [Ayush](https://github.com/ayushjhanwar)

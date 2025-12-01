@@ -1,19 +1,45 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import UserProfile from '@/components/UserProfile';
 import VideoInput from '@/components/video/VideoInput';
 import VideoList from '@/components/video/VideoList';
 import SignInModal from '@/components/SignInModal';
+import LimitReachedModal from '@/components/LimitReachedModal';
+import api from '@/lib/api';
+
+interface QuotaInfo {
+  videos_analyzed: number;
+  video_limit: number;
+  remaining: number;
+}
 
 export default function Dashboard() {
   const { user, loading, login } = useAuth();
   const router = useRouter();
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [showSignInModal, setShowSignInModal] = useState(false);
+  const [showLimitModal, setShowLimitModal] = useState(false);
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
+  const [quota, setQuota] = useState<QuotaInfo | null>(null);
+
+  // Fetch quota when user is authenticated
+  useEffect(() => {
+    if (user) {
+      fetchQuota();
+    }
+  }, [user]);
+
+  const fetchQuota = async () => {
+    try {
+      const response = await api.get('/api/users/quota');
+      setQuota(response.data);
+    } catch (err) {
+      console.error('Failed to fetch quota:', err);
+    }
+  };
 
   const handleVideoSubmitted = (videoId: string) => {
     router.push(`/video/${videoId}`);
@@ -23,6 +49,11 @@ export default function Dashboard() {
     if (!user) {
       setPendingUrl(url);
       setShowSignInModal(true);
+      return false;
+    }
+    // Check if user has reached their limit
+    if (quota && quota.remaining <= 0) {
+      setShowLimitModal(true);
       return false;
     }
     return true;
@@ -166,6 +197,25 @@ export default function Dashboard() {
             onVideoSubmitted={handleVideoSubmitted}
             onBeforeSubmit={handleGenerateNotesAttempt}
           />
+          {/* Quota indicator for authenticated users */}
+          {user && quota && (
+            <div className="mt-4 text-center">
+              <span className={`text-sm ${quota.remaining <= 1 ? 'text-amber-400' : 'text-gray-500'}`}>
+                {quota.remaining > 0 ? (
+                  <>
+                    <span className="font-medium">{quota.remaining}</span> video{quota.remaining !== 1 ? 's' : ''} remaining
+                  </>
+                ) : (
+                  <button
+                    onClick={() => setShowLimitModal(true)}
+                    className="text-amber-400 hover:text-amber-300 underline transition-colors"
+                  >
+                    Limit reached - Request more
+                  </button>
+                )}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Features Grid - 6 features in 2 rows */}
@@ -195,6 +245,17 @@ export default function Dashboard() {
         onClose={() => setShowSignInModal(false)}
         pendingVideoUrl={pendingUrl}
       />
+
+      {/* Limit Reached Modal */}
+      {quota && (
+        <LimitReachedModal
+          isOpen={showLimitModal}
+          onClose={() => setShowLimitModal(false)}
+          videosAnalyzed={quota.videos_analyzed}
+          videoLimit={quota.video_limit}
+          onSuccess={() => fetchQuota()}
+        />
+      )}
     </div>
   );
 }

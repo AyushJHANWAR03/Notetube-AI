@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     # Supadata.ai (for YouTube transcripts - primary provider)
     SUPADATA_API_KEY: str | None = None
 
+    # Resend (for transactional emails)
+    RESEND_API_KEY: str | None = None
+    RESEND_FROM_DOMAIN: str = "notetubeai.in"
+
     # API
     API_V1_PREFIX: str = "/api"
     PROJECT_NAME: str = "NoteTube AI"

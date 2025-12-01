@@ -51,6 +51,13 @@ async def create_video(
     video_service = VideoProcessingService()
     youtube_service = YouTubeService()
 
+    # Check video limit
+    if current_user.videos_analyzed >= current_user.video_limit:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="LIMIT_REACHED"
+        )
+
     # Extract and validate YouTube video ID
     try:
         youtube_video_id = youtube_service.extract_video_id(request.url)
