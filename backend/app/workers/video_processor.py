@@ -10,7 +10,6 @@ import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Any, Optional
 from uuid import UUID
-import logging
 
 from redis import Redis
 from rq import Queue
@@ -25,9 +24,6 @@ from app.services.chat_service import ChatService, ChatServiceError
 
 # Cooldown between YouTube API calls to avoid rate limits
 YOUTUBE_COOLDOWN_SECONDS = 3
-
-# Setup logging
-logger = logging.getLogger(__name__)
 
 # Redis connection
 redis_conn = Redis.from_url(settings.REDIS_URL)
@@ -56,9 +52,9 @@ def process_video_task(video_id: str, user_id: str, youtube_url: str) -> Dict[st
     """
     print(f"\n{'='*60}")
     print(f"[JOB START] Processing video: {video_id}")
-    print(f"[JOB START] YouTube URL: {youtube_url}")
-    print(f"[JOB START] User: {user_id}")
-    print(f"{'='*60}\n")
+    print(f"  - URL: {youtube_url}")
+    print(f"  - User: {user_id}")
+    print(f"{'='*60}")
 
     # Run the async processing in a new event loop
     loop = asyncio.new_event_loop()
@@ -72,7 +68,7 @@ def process_video_task(video_id: str, user_id: str, youtube_url: str) -> Dict[st
             )
         )
         print(f"\n{'='*60}")
-        print(f"[JOB END] Video {video_id} - Result: {result}")
+        print(f"[JOB END] Video: {video_id} | Success: {result.get('success', False)}")
         print(f"{'='*60}\n")
         return result
     finally:
@@ -328,7 +324,7 @@ async def _process_video_async(
             }
 
         except YouTubeServiceError as e:
-            error_msg = f"YouTube error: {str(e)}"
+            error_msg = str(e)
             print(f"\n[ERROR] ❌ YouTube fetch failed!")
             print(f"[ERROR] {error_msg}")
 
@@ -480,7 +476,7 @@ def enqueue_video_processing(video_id: UUID, user_id: UUID, youtube_url: str) ->
         result_ttl=3600   # Keep result for 1 hour
     )
 
-    logger.info(f"Enqueued video {video_id} for processing. Job ID: {job.id}")
+    print(f"[QUEUE] Enqueued video {video_id} for processing. Job ID: {job.id}")
     return job.id
 
 
