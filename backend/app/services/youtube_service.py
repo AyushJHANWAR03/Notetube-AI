@@ -122,9 +122,33 @@ class YouTubeService:
 
         raise YouTubeServiceError("Invalid YouTube URL - could not extract video ID")
 
+    def _get_metadata_oembed(self, video_id: str) -> Dict[str, Any]:
+        """
+        Fetch basic metadata using YouTube's oEmbed API.
+        This is a reliable fallback that doesn't get rate-limited.
+        Returns title, thumbnail, and channel name (no duration).
+        """
+        oembed_url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
+
+        try:
+            response = requests.get(oembed_url, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+
+            return {
+                "video_id": video_id,
+                "title": data.get('title', 'Unknown'),
+                "duration_seconds": 0,  # oEmbed doesn't provide duration
+                "thumbnail_url": data.get('thumbnail_url', f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"),
+                "channel": data.get('author_name', 'Unknown')
+            }
+        except Exception as e:
+            print(f"[YouTube] oEmbed fallback failed: {str(e)}")
+            return None
+
     def get_video_metadata(self, video_id: str) -> Dict[str, Any]:
         """
-        Fetch video metadata using yt-dlp.
+        Fetch video metadata using yt-dlp with oEmbed fallback.
         """
         def _fetch_metadata():
             url = f"https://www.youtube.com/watch?v={video_id}"
@@ -163,9 +187,14 @@ class YouTubeService:
 
         try:
             return self._execute_with_retry(_fetch_metadata)
-        except YouTubeServiceError:
-            raise
         except Exception as e:
+            print(f"[YouTube] yt-dlp failed: {str(e)}, trying oEmbed fallback...")
+            # Try oEmbed fallback
+            oembed_result = self._get_metadata_oembed(video_id)
+            if oembed_result:
+                print(f"[YouTube] oEmbed fallback succeeded: {oembed_result['title']}")
+                return oembed_result
+            # If everything fails, raise the original error
             raise YouTubeServiceError(f"Failed to fetch video metadata: {str(e)}")
 
     def _get_transcript_supadata(self, video_id: str, language: str = "en") -> Dict[str, Any]:
