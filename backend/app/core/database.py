@@ -12,7 +12,11 @@ database_url = database_url.replace("postgresql+psycopg://", "postgresql+asyncpg
 engine = create_async_engine(
     database_url,
     pool_pre_ping=True,
-    echo=settings.ENVIRONMENT == "development"
+    echo=settings.ENVIRONMENT == "development",
+    connect_args={
+        "statement_cache_size": 0,
+        "prepared_statement_cache_size": 0,
+    }
 )
 
 # Create async SessionLocal class
