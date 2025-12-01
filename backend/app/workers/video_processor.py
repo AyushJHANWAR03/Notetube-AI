@@ -3,24 +3,32 @@ Video Processing Worker - Background task for processing YouTube videos.
 
 Uses RQ (Redis Queue) for background job processing.
 Runs 2 AI generation tasks in parallel using ThreadPoolExecutor.
+
+IMPORTANT: This worker uses SYNCHRONOUS database operations (psycopg2)
+to avoid greenlet/async issues with the RQ worker.
 """
-import asyncio
 import time
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from uuid import UUID
+from datetime import datetime
 
 from redis import Redis
 from rq import Queue
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import sessionmaker, Session
 
 from app.core.config import settings
 from app.services.youtube_service import YouTubeService, YouTubeServiceError
 from app.services.ai_notes_service import AINotesService, AINotesServiceError
-from app.services.video_processing_service import VideoProcessingService
 from app.services.chat_service import ChatService, ChatServiceError
+from app.models.video import Video
+from app.models.transcript import Transcript
+from app.models.notes import Notes
+from app.models.job import Job
+from app.models.user import User
+from app.core.constants import VideoStatus, JobStatus, JobType
 
 # Cooldown between YouTube API calls to avoid rate limits
 YOUTUBE_COOLDOWN_SECONDS = 3
@@ -31,9 +39,19 @@ redis_conn = Redis.from_url(settings.REDIS_URL)
 # RQ Queue
 video_queue = Queue("video_processing", connection=redis_conn)
 
-# Async engine for database operations
-async_engine = create_async_engine(settings.DATABASE_URL, echo=False)
-AsyncSessionLocal = sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
+
+def get_sync_database_url(async_url: str) -> str:
+    """Convert async psycopg URL to sync psycopg2 URL."""
+    # postgresql+psycopg -> postgresql+psycopg2
+    if "+psycopg" in async_url and "+psycopg2" not in async_url:
+        return async_url.replace("+psycopg", "+psycopg2")
+    return async_url
+
+
+# Create SYNCHRONOUS database engine (uses psycopg2)
+sync_database_url = get_sync_database_url(settings.DATABASE_URL)
+sync_engine = create_engine(sync_database_url, echo=False, pool_pre_ping=True)
+SyncSessionLocal = sessionmaker(bind=sync_engine, expire_on_commit=False)
 
 
 def process_video_task(video_id: str, user_id: str, youtube_url: str) -> Dict[str, Any]:
@@ -41,6 +59,7 @@ def process_video_task(video_id: str, user_id: str, youtube_url: str) -> Dict[st
     Background task to process a YouTube video.
 
     This is the entry point called by RQ worker.
+    Uses SYNCHRONOUS database operations.
 
     Args:
         video_id: Video's UUID as string
@@ -56,71 +75,63 @@ def process_video_task(video_id: str, user_id: str, youtube_url: str) -> Dict[st
     print(f"  - User: {user_id}")
     print(f"{'='*60}")
 
-    # Run the async processing in a new event loop
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        result = loop.run_until_complete(
-            _process_video_async(
-                UUID(video_id),
-                UUID(user_id),
-                youtube_url
-            )
-        )
-        print(f"\n{'='*60}")
-        print(f"[JOB END] Video: {video_id} | Success: {result.get('success', False)}")
-        print(f"{'='*60}\n")
-        return result
-    finally:
-        loop.close()
+    result = _process_video_sync(
+        UUID(video_id),
+        UUID(user_id),
+        youtube_url
+    )
+
+    print(f"\n{'='*60}")
+    print(f"[JOB END] Video: {video_id} | Success: {result.get('success', False)}")
+    print(f"{'='*60}\n")
+    return result
 
 
-async def _process_video_async(
+def _process_video_sync(
     video_id: UUID,
     user_id: UUID,
     youtube_url: str
 ) -> Dict[str, Any]:
     """
-    Async implementation of video processing.
+    Synchronous implementation of video processing.
 
     Steps:
     1. Update video status to PROCESSING
     2. Extract YouTube video data (metadata + transcript)
-    3. Run all 3 AI generation tasks in parallel
+    3. Run AI generation tasks in parallel
     4. Save everything to database
     5. Update video status to READY (or FAILED)
     """
-    video_service = VideoProcessingService()
-
-    async with AsyncSessionLocal() as db:
+    with SyncSessionLocal() as db:
         job = None
 
         try:
             # Create processing job
             print(f"[STEP 1/7] Creating processing job in database...")
-            job = await video_service.create_job(
-                video_id,
-                video_service.JOB_TYPE_VIDEO_PROCESS,
-                db
+            job = Job(
+                video_id=video_id,
+                type=JobType.VIDEO_PROCESS,
+                status=JobStatus.PENDING,
+                progress=0
             )
+            db.add(job)
+            db.commit()
+            db.refresh(job)
             print(f"[STEP 1/7] ✓ Job created: {job.id}")
 
             # Update video status to PROCESSING
             print(f"[STEP 2/7] Updating video status to PROCESSING...")
-            await video_service.update_video_status(
-                video_id,
-                video_service.STATUS_PROCESSING,
-                db
-            )
+            video = db.execute(select(Video).where(Video.id == video_id)).scalar_one_or_none()
+            if video:
+                video.status = VideoStatus.PROCESSING
+                db.commit()
             print(f"[STEP 2/7] ✓ Video status updated")
 
-            # Step 1: Fetch YouTube data (with caching)
-            await video_service.update_job_status(
-                job.id,
-                video_service.JOB_FETCHING_TRANSCRIPT,
-                db,
-                progress=10
-            )
+            # Update job status
+            job.status = JobStatus.FETCHING_TRANSCRIPT
+            job.progress = 10
+            job.started_at = datetime.utcnow()
+            db.commit()
 
             youtube_service = YouTubeService()
             yt_video_id = youtube_service.extract_video_id(youtube_url)
@@ -150,13 +161,13 @@ async def _process_video_async(
             print(f"[STEP 4/7] Saving video metadata...")
             print(f"  - Title: {video_data['metadata'].get('title', 'N/A')}")
             print(f"  - Duration: {video_data['metadata'].get('duration_seconds', 0)} seconds")
-            await video_service.update_video_metadata(
-                video_id,
-                db,
-                title=video_data["metadata"].get("title"),
-                thumbnail_url=video_data["metadata"].get("thumbnail"),
-                duration_seconds=video_data["metadata"].get("duration_seconds")
-            )
+
+            video = db.execute(select(Video).where(Video.id == video_id)).scalar_one_or_none()
+            if video:
+                video.title = video_data["metadata"].get("title")
+                video.thumbnail_url = video_data["metadata"].get("thumbnail_url")
+                video.duration_seconds = video_data["metadata"].get("duration_seconds")
+                db.commit()
             print(f"[STEP 4/7] ✓ Metadata saved")
 
             # Save transcript
@@ -164,14 +175,27 @@ async def _process_video_async(
             print(f"  - Language: {video_data['transcript']['language_code']}")
             print(f"  - Provider: {video_data['transcript']['provider']}")
             print(f"  - Segments: {len(video_data['transcript']['segments'])}")
-            await video_service.save_transcript(
-                video_id=video_id,
-                language_code=video_data["transcript"]["language_code"],
-                provider=video_data["transcript"]["provider"],
-                raw_text=video_data["transcript"]["raw_text"],
-                segments=video_data["transcript"]["segments"],
-                db=db
-            )
+
+            # Check if transcript exists
+            existing_transcript = db.execute(
+                select(Transcript).where(Transcript.video_id == video_id)
+            ).scalar_one_or_none()
+
+            if existing_transcript:
+                existing_transcript.language_code = video_data["transcript"]["language_code"]
+                existing_transcript.provider = video_data["transcript"]["provider"]
+                existing_transcript.raw_text = video_data["transcript"]["raw_text"]
+                existing_transcript.segments = video_data["transcript"]["segments"]
+            else:
+                transcript_obj = Transcript(
+                    video_id=video_id,
+                    language_code=video_data["transcript"]["language_code"],
+                    provider=video_data["transcript"]["provider"],
+                    raw_text=video_data["transcript"]["raw_text"],
+                    segments=video_data["transcript"]["segments"]
+                )
+                db.add(transcript_obj)
+            db.commit()
             print(f"[STEP 4/7] ✓ Transcript saved")
 
             # Get transcript data
@@ -179,7 +203,7 @@ async def _process_video_async(
             segments = video_data["transcript"]["segments"]
             language_code = video_data["transcript"]["language_code"]
 
-            # Step 2: Transliterate non-English transcripts to English
+            # Transliterate non-English transcripts to English
             transliteration_tokens = 0
             if not language_code.lower().startswith('en'):
                 print(f"[STEP 4.5/7] Transliterating {language_code} transcript to English...")
@@ -200,33 +224,32 @@ async def _process_video_async(
 
                     # Update transcript in database with English version
                     print(f"[STEP 4.5/7] Updating transcript with English version...")
-                    await video_service.save_transcript(
-                        video_id=video_id,
-                        language_code="en",  # Now English
-                        provider=video_data["transcript"]["provider"] + "_transliterated",
-                        raw_text=transcript,
-                        segments=segments,
-                        db=db
-                    )
+                    existing_transcript = db.execute(
+                        select(Transcript).where(Transcript.video_id == video_id)
+                    ).scalar_one_or_none()
+                    if existing_transcript:
+                        existing_transcript.language_code = "en"
+                        existing_transcript.provider = video_data["transcript"]["provider"] + "_transliterated"
+                        existing_transcript.raw_text = transcript
+                        existing_transcript.segments = segments
+                        db.commit()
                     print(f"[STEP 4.5/7] ✓ English transcript saved")
                 else:
                     print(f"[STEP 4.5/7] Skipped (already English)")
 
-            await video_service.update_job_status(
-                job.id,
-                video_service.JOB_GENERATING_NOTES,
-                db,
-                progress=40
-            )
+            # Update job status
+            job.status = JobStatus.GENERATING_NOTES
+            job.progress = 40
+            db.commit()
 
-            # Step 3: Generate AI content in parallel
+            # Generate AI content in parallel
             video_title = video_data["metadata"].get("title", "Untitled")
             video_duration = video_data["metadata"].get("duration_seconds", 0)
 
             print(f"[STEP 5/7] Starting AI content generation (2 parallel tasks)...")
             print(f"  - Transcript length: {len(transcript)} chars")
             print(f"  - Video title: {video_title}")
-            ai_results = await _generate_ai_content_parallel(
+            ai_results = _generate_ai_content_parallel(
                 transcript,
                 segments,
                 video_title,
@@ -234,7 +257,7 @@ async def _process_video_async(
             )
             print(f"[STEP 5/7] ✓ AI content generated")
 
-            # Step 3.5: Generate suggested chat prompts
+            # Generate suggested chat prompts
             print(f"[STEP 5.5/7] Generating suggested chat prompts...")
             suggested_prompts = []
             try:
@@ -247,21 +270,18 @@ async def _process_video_async(
                 print(f"[STEP 5.5/7] ✓ Generated {len(suggested_prompts)} suggested prompts")
             except ChatServiceError as e:
                 print(f"[STEP 5.5/7] ⚠ Could not generate suggested prompts: {e}")
-                # Non-fatal error, continue without suggested prompts
             except Exception as e:
                 print(f"[STEP 5.5/7] ⚠ Unexpected error generating prompts: {e}")
-                # Non-fatal error, continue without suggested prompts
 
-            # Step 3: Save notes to database
+            # Save notes to database
             print(f"[STEP 6/7] Saving AI-generated notes to database...")
             print(f"  - Summary length: {len(ai_results['structured']['summary'])} chars")
             print(f"  - Bullets: {len(ai_results['structured']['bullets'])} items")
             print(f"  - Chapters: {len(ai_results['chapters']['chapters'])} chapters")
             print(f"  - Flashcards: {len(ai_results['structured']['flashcards'])} cards")
-            await video_service.save_notes(
+
+            notes = Notes(
                 video_id=video_id,
-                db=db,
-                # Structured notes
                 summary=ai_results["structured"]["summary"],
                 bullets=ai_results["structured"]["bullets"],
                 key_timestamps=ai_results["structured"]["key_timestamps"],
@@ -269,40 +289,40 @@ async def _process_video_async(
                 action_items=ai_results["structured"]["action_items"],
                 topics=ai_results["structured"]["topics"],
                 difficulty_level=ai_results["structured"]["difficulty_level"],
-                # Full notes - no longer generated, pass empty string
                 markdown_notes="",
                 chapters=ai_results["chapters"]["chapters"],
-                # AI metadata
                 notes_model=ai_results["structured"]["model_used"],
                 notes_tokens=ai_results["structured"]["tokens_used"],
                 chapters_tokens=ai_results["chapters"]["tokens_used"],
-                was_truncated=False,
+                was_truncated="N",
                 raw_llm_output={
                     "chapters": ai_results["chapters"],
                     "structured": ai_results["structured"]
                 },
-                # Chat suggested prompts
                 suggested_prompts=suggested_prompts if suggested_prompts else None
             )
+            db.add(notes)
+            db.commit()
             print(f"[STEP 6/7] ✓ Notes saved to database")
 
-            # Step 4: Mark as complete
+            # Mark as complete
             print(f"[STEP 7/7] Marking video as READY...")
-            await video_service.update_job_status(
-                job.id,
-                video_service.JOB_COMPLETED,
-                db,
-                progress=100
-            )
+            job.status = JobStatus.COMPLETED
+            job.progress = 100
+            job.completed_at = datetime.utcnow()
+            db.commit()
 
-            await video_service.update_video_status(
-                video_id,
-                video_service.STATUS_READY,
-                db
-            )
+            video = db.execute(select(Video).where(Video.id == video_id)).scalar_one_or_none()
+            if video:
+                video.status = VideoStatus.READY
+                video.processed_at = datetime.utcnow()
+                db.commit()
 
             # Increment user's videos_analyzed counter
-            await video_service.increment_user_videos_analyzed(user_id, db)
+            user = db.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+            if user:
+                user.videos_analyzed += 1
+                db.commit()
 
             total_tokens = (
                 ai_results["chapters"]["tokens_used"] +
@@ -329,19 +349,16 @@ async def _process_video_async(
             print(f"[ERROR] {error_msg}")
 
             if job:
-                await video_service.update_job_status(
-                    job.id,
-                    video_service.JOB_FAILED,
-                    db,
-                    error_message=error_msg
-                )
+                job.status = JobStatus.FAILED
+                job.error_message = error_msg
+                job.completed_at = datetime.utcnow()
+                db.commit()
 
-            await video_service.update_video_status(
-                video_id,
-                video_service.STATUS_FAILED,
-                db,
-                failure_reason=error_msg
-            )
+            video = db.execute(select(Video).where(Video.id == video_id)).scalar_one_or_none()
+            if video:
+                video.status = VideoStatus.FAILED
+                video.failure_reason = error_msg
+                db.commit()
 
             return {"success": False, "error": error_msg}
 
@@ -351,19 +368,16 @@ async def _process_video_async(
             print(f"[ERROR] {error_msg}")
 
             if job:
-                await video_service.update_job_status(
-                    job.id,
-                    video_service.JOB_FAILED,
-                    db,
-                    error_message=error_msg
-                )
+                job.status = JobStatus.FAILED
+                job.error_message = error_msg
+                job.completed_at = datetime.utcnow()
+                db.commit()
 
-            await video_service.update_video_status(
-                video_id,
-                video_service.STATUS_FAILED,
-                db,
-                failure_reason=error_msg
-            )
+            video = db.execute(select(Video).where(Video.id == video_id)).scalar_one_or_none()
+            if video:
+                video.status = VideoStatus.FAILED
+                video.failure_reason = error_msg
+                db.commit()
 
             return {"success": False, "error": error_msg}
 
@@ -371,26 +385,25 @@ async def _process_video_async(
             error_msg = f"Unexpected error: {str(e)}"
             print(f"\n[ERROR] ❌ Unexpected error!")
             print(f"[ERROR] {error_msg}")
+            import traceback
+            traceback.print_exc()
 
             if job:
-                await video_service.update_job_status(
-                    job.id,
-                    video_service.JOB_FAILED,
-                    db,
-                    error_message=error_msg
-                )
+                job.status = JobStatus.FAILED
+                job.error_message = error_msg
+                job.completed_at = datetime.utcnow()
+                db.commit()
 
-            await video_service.update_video_status(
-                video_id,
-                video_service.STATUS_FAILED,
-                db,
-                failure_reason=error_msg
-            )
+            video = db.execute(select(Video).where(Video.id == video_id)).scalar_one_or_none()
+            if video:
+                video.status = VideoStatus.FAILED
+                video.failure_reason = error_msg
+                db.commit()
 
             return {"success": False, "error": error_msg}
 
 
-async def _generate_ai_content_parallel(
+def _generate_ai_content_parallel(
     transcript: str,
     segments: list,
     video_title: str,
