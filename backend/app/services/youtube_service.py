@@ -1,54 +1,24 @@
 """
 YouTube service for fetching video metadata and transcripts.
 
-Uses Supadata.ai for transcripts and yt-dlp for metadata only.
+Uses YouTube Data API v3 for metadata and Supadata.ai for transcripts.
 """
 import re
-import time
-import random
 import os
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 import requests
-import yt_dlp
 
 from app.core.config import settings
 
 
-# Maximum video duration in seconds (2 hours)
-MAX_VIDEO_DURATION = 7200
-
-# Retry configuration - Fail fast for better UX
-MAX_RETRIES = 2  # Only retry twice (quick fail)
-INITIAL_RETRY_DELAY = 2  # Start with 2 seconds
-MAX_RETRY_DELAY = 5  # Max 5 seconds between retries
+# YouTube Data API v3 configuration
+YOUTUBE_API_KEY = os.environ.get('YOUTUBE_API_KEY', '') or getattr(settings, 'YOUTUBE_API_KEY', '') or ''
+YOUTUBE_API_BASE_URL = "https://www.googleapis.com/youtube/v3/videos"
 
 # Supadata.ai configuration (transcript provider)
 SUPADATA_API_KEY = os.environ.get('SUPADATA_API_KEY', '')
 SUPADATA_BASE_URL = "https://api.supadata.ai/v1/youtube/transcript"
-
-# User agents for rotation
-USER_AGENTS = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
-]
-
-# Proxy configuration (for yt-dlp metadata)
-def _get_proxy_list() -> List[str]:
-    """Get list of proxies from environment."""
-    single_proxy = getattr(settings, 'PROXY_URL', None) or os.environ.get('PROXY_URL')
-    if single_proxy:
-        return [single_proxy]
-
-    proxy_list = getattr(settings, 'PROXY_LIST', None) or os.environ.get('PROXY_LIST', '')
-    if proxy_list:
-        return [p.strip() for p in proxy_list.split(',') if p.strip()]
-
-    return []
-
-PROXY_LIST = _get_proxy_list()
 
 
 class YouTubeServiceError(Exception):
@@ -56,52 +26,25 @@ class YouTubeServiceError(Exception):
     pass
 
 
+def _parse_iso8601_duration(duration: str) -> int:
+    """
+    Parse ISO 8601 duration string (e.g., PT1H2M3S) to seconds.
+    """
+    import re
+    pattern = r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?'
+    match = re.match(pattern, duration)
+    if not match:
+        return 0
+
+    hours = int(match.group(1) or 0)
+    minutes = int(match.group(2) or 0)
+    seconds = int(match.group(3) or 0)
+
+    return hours * 3600 + minutes * 60 + seconds
+
+
 class YouTubeService:
     """Service for interacting with YouTube videos."""
-
-    def _execute_with_retry(self, func, *args, **kwargs):
-        """
-        Execute a function with exponential backoff retry logic.
-        Handles both 429 (rate limit) and 403 (forbidden/blocked) errors.
-        """
-        last_error = None
-
-        for attempt in range(MAX_RETRIES):
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                last_error = e
-                error_str = str(e).lower()
-
-                # Check if it's a rate limit or blocked error (both 429 and 403)
-                is_rate_limit = '429' in error_str or 'too many requests' in error_str or 'rate limit' in error_str
-                is_forbidden = '403' in error_str or 'forbidden' in error_str
-
-                if is_rate_limit or is_forbidden:
-                    if attempt < MAX_RETRIES - 1:
-                        # Use longer delays for 403 errors as they indicate IP blocking
-                        base_delay = INITIAL_RETRY_DELAY * 2 if is_forbidden else INITIAL_RETRY_DELAY
-                        delay = min(base_delay * (2 ** attempt), MAX_RETRY_DELAY)
-                        jitter = random.uniform(0, delay * 0.2)
-                        total_delay = delay + jitter
-
-                        error_type = "Forbidden (IP blocked)" if is_forbidden else "Rate limit"
-                        print(f"[YouTube] {error_type} hit, retrying in {total_delay:.1f}s (attempt {attempt + 1}/{MAX_RETRIES})")
-                        time.sleep(total_delay)
-                        continue
-                    else:
-                        error_msg = "IP blocked by YouTube" if is_forbidden else "Rate limit exceeded"
-                        raise YouTubeServiceError(
-                            f"{error_msg} after {MAX_RETRIES} attempts. Please try again later."
-                        )
-                else:
-                    raise
-
-        raise YouTubeServiceError(f"Failed after {MAX_RETRIES} attempts: {str(last_error)}")
-
-    def _get_random_user_agent(self) -> str:
-        """Get a random user agent for requests."""
-        return random.choice(USER_AGENTS)
 
     def extract_video_id(self, url: str) -> str:
         """
@@ -122,80 +65,112 @@ class YouTubeService:
 
         raise YouTubeServiceError("Invalid YouTube URL - could not extract video ID")
 
+    def _get_metadata_youtube_api(self, video_id: str) -> Dict[str, Any]:
+        """
+        Fetch video metadata using YouTube Data API v3.
+        Returns title, duration, thumbnail, and channel name.
+        """
+        if not YOUTUBE_API_KEY:
+            print("[YouTube] No API key configured, falling back to oEmbed")
+            return None
+
+        params = {
+            'id': video_id,
+            'part': 'snippet,contentDetails',
+            'key': YOUTUBE_API_KEY
+        }
+
+        try:
+            print(f"[YouTube] Fetching metadata via YouTube Data API for {video_id}")
+            response = requests.get(YOUTUBE_API_BASE_URL, params=params, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+
+            items = data.get('items', [])
+            if not items:
+                print(f"[YouTube] Video not found: {video_id}")
+                return None
+
+            video_data = items[0]
+            snippet = video_data.get('snippet', {})
+            content_details = video_data.get('contentDetails', {})
+
+            # Parse duration from ISO 8601 format
+            duration_iso = content_details.get('duration', 'PT0S')
+            duration_seconds = _parse_iso8601_duration(duration_iso)
+
+            # Get best thumbnail
+            thumbnails = snippet.get('thumbnails', {})
+            thumbnail_url = (
+                thumbnails.get('maxres', {}).get('url') or
+                thumbnails.get('high', {}).get('url') or
+                thumbnails.get('medium', {}).get('url') or
+                thumbnails.get('default', {}).get('url') or
+                f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
+            )
+
+            title = snippet.get('title', 'Unknown')
+            channel = snippet.get('channelTitle', 'Unknown')
+
+            print(f"[YouTube] API success: {title} ({duration_seconds}s)")
+
+            return {
+                "video_id": video_id,
+                "title": title,
+                "duration_seconds": duration_seconds,
+                "thumbnail_url": thumbnail_url,
+                "channel": channel
+            }
+
+        except requests.exceptions.RequestException as e:
+            print(f"[YouTube] API request failed: {str(e)}")
+            return None
+        except Exception as e:
+            print(f"[YouTube] API error: {str(e)}")
+            return None
+
     def _get_metadata_oembed(self, video_id: str) -> Dict[str, Any]:
         """
-        Fetch basic metadata using YouTube's oEmbed API.
-        This is a reliable fallback that doesn't get rate-limited.
+        Fetch basic metadata using YouTube's oEmbed API (fallback).
         Returns title, thumbnail, and channel name (no duration).
         """
         oembed_url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
 
         try:
+            print(f"[YouTube] Fetching metadata via oEmbed for {video_id}")
             response = requests.get(oembed_url, timeout=10)
             response.raise_for_status()
             data = response.json()
 
+            title = data.get('title', 'Unknown')
+            print(f"[YouTube] oEmbed success: {title}")
+
             return {
                 "video_id": video_id,
-                "title": data.get('title', 'Unknown'),
+                "title": title,
                 "duration_seconds": 0,  # oEmbed doesn't provide duration
                 "thumbnail_url": data.get('thumbnail_url', f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"),
                 "channel": data.get('author_name', 'Unknown')
             }
         except Exception as e:
-            print(f"[YouTube] oEmbed fallback failed: {str(e)}")
+            print(f"[YouTube] oEmbed failed: {str(e)}")
             return None
 
     def get_video_metadata(self, video_id: str) -> Dict[str, Any]:
         """
-        Fetch video metadata using yt-dlp with oEmbed fallback.
+        Fetch video metadata. Tries YouTube Data API first, falls back to oEmbed.
         """
-        def _fetch_metadata():
-            url = f"https://www.youtube.com/watch?v={video_id}"
+        # Try YouTube Data API first (has duration)
+        result = self._get_metadata_youtube_api(video_id)
+        if result:
+            return result
 
-            ydl_opts = {
-                'quiet': True,
-                'no_warnings': True,
-                'extract_flat': False,
-                'skip_download': True,
-                'user_agent': self._get_random_user_agent(),
-                'ignore_no_formats_error': True,  # We only need metadata, not video formats
-                'source_address': '0.0.0.0',  # Force IPv4 to avoid IPv6 rate limits
-            }
+        # Fall back to oEmbed (no duration but reliable)
+        result = self._get_metadata_oembed(video_id)
+        if result:
+            return result
 
-            if PROXY_LIST:
-                proxy = random.choice(PROXY_LIST)
-                ydl_opts['proxy'] = proxy
-                print(f"[YouTube] Using proxy for metadata: {proxy[:30]}...")
-
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-
-                duration = info.get('duration', 0)
-                if duration > MAX_VIDEO_DURATION:
-                    raise YouTubeServiceError(
-                        f"Video duration exceeds maximum allowed length of {MAX_VIDEO_DURATION // 3600} hours"
-                    )
-
-                return {
-                    "video_id": video_id,
-                    "title": info.get('title', 'Unknown'),
-                    "duration_seconds": duration,
-                    "thumbnail_url": info.get('thumbnail', ''),
-                    "channel": info.get('uploader', 'Unknown')
-                }
-
-        try:
-            return self._execute_with_retry(_fetch_metadata)
-        except Exception as e:
-            print(f"[YouTube] yt-dlp failed: {str(e)}, trying oEmbed fallback...")
-            # Try oEmbed fallback
-            oembed_result = self._get_metadata_oembed(video_id)
-            if oembed_result:
-                print(f"[YouTube] oEmbed fallback succeeded: {oembed_result['title']}")
-                return oembed_result
-            # If everything fails, raise the original error
-            raise YouTubeServiceError(f"Failed to fetch video metadata: {str(e)}")
+        raise YouTubeServiceError(f"Failed to fetch video metadata for {video_id}")
 
     def _get_transcript_supadata(self, video_id: str, language: str = "en") -> Dict[str, Any]:
         """

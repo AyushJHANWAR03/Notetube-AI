@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
 
     # YouTube (optional)
+    YOUTUBE_API_KEY: str | None = None
     YOUTUBE_COOKIES_FILE: str | None = None
     PROXY_URL: str | None = None
     PROXY_LIST: str | None = None
