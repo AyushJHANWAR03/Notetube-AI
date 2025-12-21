@@ -54,3 +54,21 @@ Chapters:
 
 Generate 3 engaging questions a viewer might want to ask about this video.
 Return ONLY a JSON array like: ["Question 1?", "Question 2?", "Question 3?"]"""
+
+# Follow-up prompts after chat response
+FOLLOWUP_PROMPTS_SYSTEM_PROMPT = """Generate 2 short follow-up questions based on the conversation.
+
+REQUIREMENTS:
+1. Questions should dig deeper into what was just discussed
+2. Keep each question under 8 words
+3. Make them feel like natural follow-ups
+4. Focus on "how", "why", or asking for examples
+
+Return ONLY a JSON array: ["Follow-up 1?", "Follow-up 2?"]"""
+
+FOLLOWUP_PROMPTS_USER_TEMPLATE = """User asked: {user_question}
+
+Assistant answered: {assistant_answer}
+
+Generate 2 short follow-up questions the user might want to ask next.
+Return ONLY a JSON array like: ["Follow-up 1?", "Follow-up 2?"]"""

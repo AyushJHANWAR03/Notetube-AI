@@ -502,7 +502,7 @@ export default function VideoDetailPage() {
     ];
 
     return (
-      <div className="lg:w-[40%] xl:w-[38%] lg:border-l border-gray-700 bg-gray-800 h-[calc(100vh-60px)] lg:h-screen flex flex-col overflow-hidden">
+      <div className="lg:w-[40%] xl:w-[38%] lg:border-l border-gray-700 bg-gray-800 h-full flex flex-col overflow-hidden">
         {/* Tabs */}
         <div className="flex-shrink-0 bg-gray-800 z-10 border-b border-gray-700">
           <nav className="flex overflow-x-auto">
@@ -711,10 +711,10 @@ export default function VideoDetailPage() {
       </header>
 
       {/* Main Content - Video Player + Notes Side by Side */}
-      <div className="max-w-[1600px] mx-auto">
-        <div className="flex flex-col lg:flex-row">
-          {/* Left Side - Video Player */}
-          <div className="lg:w-[60%] xl:w-[62%]">
+      <div className="max-w-[1600px] mx-auto h-[calc(100vh-60px)] overflow-hidden">
+        <div className="flex flex-col lg:flex-row h-full">
+          {/* Left Side - Video Player (scrollable independently) */}
+          <div className="lg:w-[60%] xl:w-[62%] h-full overflow-y-auto">
             {/* Video Player - Compact like reference */}
             <div className="bg-black">
               <div ref={playerContainerRef} className="relative w-full mx-auto" style={{ paddingBottom: '56.25%', maxHeight: '340px' }}>
