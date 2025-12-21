@@ -246,7 +246,7 @@ export default function ChatPanel({
           {messages.length > 0 && (
             <button
               onClick={clearMessages}
-              className="mt-2 text-xs text-gray-500 hover:text-gray-400 transition-colors"
+              className="mt-2 text-xs px-3 py-1.5 rounded-full bg-purple-900/40 hover:bg-purple-900/60 text-purple-300 hover:text-purple-200 border border-purple-700/50 hover:border-purple-600 transition-all"
             >
               Clear chat
             </button>
