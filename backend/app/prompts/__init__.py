@@ -28,6 +28,10 @@ from app.prompts.chat_prompts import (
     SUGGESTED_PROMPTS_SYSTEM_PROMPT,
     SUGGESTED_PROMPTS_USER_TEMPLATE,
 )
+from app.prompts.chunk_topics_prompts import (
+    CHUNK_TOPICS_SYSTEM_PROMPT,
+    CHUNK_TOPICS_USER_PROMPT_TEMPLATE,
+)
 
 __all__ = [
     # Notes generation
@@ -52,4 +56,7 @@ __all__ = [
     "CHAT_USER_PROMPT_TEMPLATE",
     "SUGGESTED_PROMPTS_SYSTEM_PROMPT",
     "SUGGESTED_PROMPTS_USER_TEMPLATE",
+    # Chunk topics (for map-reduce chapter generation)
+    "CHUNK_TOPICS_SYSTEM_PROMPT",
+    "CHUNK_TOPICS_USER_PROMPT_TEMPLATE",
 ]

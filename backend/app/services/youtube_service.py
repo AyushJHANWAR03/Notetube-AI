@@ -17,7 +17,7 @@ YOUTUBE_API_KEY = os.environ.get('YOUTUBE_API_KEY', '') or getattr(settings, 'YO
 YOUTUBE_API_BASE_URL = "https://www.googleapis.com/youtube/v3/videos"
 
 # Supadata.ai configuration (transcript provider)
-SUPADATA_API_KEY = os.environ.get('SUPADATA_API_KEY', '')
+SUPADATA_API_KEY = os.environ.get('SUPADATA_API_KEY', '') or getattr(settings, 'SUPADATA_API_KEY', '') or ''
 SUPADATA_BASE_URL = "https://api.supadata.ai/v1/youtube/transcript"
 
 

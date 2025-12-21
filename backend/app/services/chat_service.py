@@ -3,6 +3,14 @@ Chat Service for AI-powered conversations about video content.
 
 Uses context from video notes (summary, chapters, topics) to answer questions.
 Supports streaming responses via SSE.
+
+TLDW-inspired features:
+- Full transcript context for accurate answers
+- Timestamp references in responses [MM:SS]
+- Fallback suggested questions when AI fails
+
+Note: Streaming chat uses OpenAI directly for low latency.
+Suggested prompts use Groq (with OpenAI fallback) for speed.
 """
 import json
 from typing import List, Dict, Any, Optional, AsyncGenerator
@@ -10,6 +18,7 @@ from openai import OpenAI
 
 from app.core.config import settings
 from app.core.constants import AIModels
+from app.services.ai_provider import AIProvider
 from app.prompts import (
     CHAT_SYSTEM_PROMPT,
     CHAT_USER_PROMPT_TEMPLATE,
@@ -18,16 +27,30 @@ from app.prompts import (
 )
 
 
+# Fallback suggested prompts when AI generation fails (inspired by TLDW)
+FALLBACK_SUGGESTED_PROMPTS = [
+    "What are the main takeaways from this video?",
+    "Can you explain the key concepts discussed?",
+    "What practical advice does this video offer?",
+    "What examples or stories are shared?",
+    "How can I apply these ideas?",
+]
+
+
 class ChatServiceError(Exception):
     """Custom exception for Chat service errors."""
     pass
 
 
 class ChatService:
-    """Service for chat functionality with video context."""
+    """Service for chat functionality with video context.
 
-    # Limits
-    MAX_CONTEXT_CHARS = 2000
+    Uses OpenAI for streaming chat (low latency requirement).
+    Uses Groq (with OpenAI fallback) for suggested prompts.
+    """
+
+    # Limits - increased for better context (like TLDW)
+    MAX_CONTEXT_CHARS = 8000  # Increased from 2000 for more context
     MAX_HISTORY_MESSAGES = 10
 
     def __init__(self, api_key: Optional[str] = None):
@@ -40,13 +63,21 @@ class ChatService:
 
         self._api_key = api_key
         self._client = None
+        self._provider = None
 
     @property
     def client(self) -> OpenAI:
-        """Lazily initialize the OpenAI client to avoid fork() issues on macOS."""
+        """Lazily initialize the OpenAI client for streaming chat."""
         if self._client is None:
             self._client = OpenAI(api_key=self._api_key)
         return self._client
+
+    @property
+    def provider(self) -> AIProvider:
+        """Lazily initialize the AI provider for non-streaming calls."""
+        if self._provider is None:
+            self._provider = AIProvider()
+        return self._provider
 
     def build_context(self, notes) -> str:
         """
@@ -74,22 +105,30 @@ class ChatService:
             topics_str = ", ".join(topics[:10])  # Max 10 topics
             parts.append(f"Main topics: {topics_str}")
 
-        # Add chapters
+        # Add chapters with timestamps for TLDW-like referencing
         chapters = getattr(notes, 'chapters', None)
         if chapters and isinstance(chapters, list):
             chapter_lines = []
-            for i, ch in enumerate(chapters[:10]):  # Max 10 chapters
+            for i, ch in enumerate(chapters[:15]):  # Max 15 chapters for more context
                 title = ch.get('title', f'Chapter {i+1}')
+                start_time = ch.get('start_time', 0)
                 summary = ch.get('summary', '')
+
+                # Format timestamp as [MM:SS] or [H:MM:SS]
+                if start_time >= 3600:
+                    timestamp = f"[{int(start_time // 3600)}:{int((start_time % 3600) // 60):02d}:{int(start_time % 60):02d}]"
+                else:
+                    timestamp = f"[{int(start_time // 60)}:{int(start_time % 60):02d}]"
+
                 if summary:
                     # Truncate chapter summary
                     if len(summary) > 100:
                         summary = summary[:100] + "..."
-                    chapter_lines.append(f"- {title}: {summary}")
+                    chapter_lines.append(f"- {timestamp} {title}: {summary}")
                 else:
-                    chapter_lines.append(f"- {title}")
+                    chapter_lines.append(f"- {timestamp} {title}")
             if chapter_lines:
-                parts.append("Chapters:\n" + "\n".join(chapter_lines))
+                parts.append("Chapters (with timestamps):\n" + "\n".join(chapter_lines))
 
         context = "\n\n".join(parts)
 
@@ -179,6 +218,8 @@ class ChatService:
         """
         Generate 3 suggested prompts based on video content.
 
+        Uses Groq (with OpenAI fallback) for fast generation.
+
         Args:
             summary: Video summary
             topics: List of video topics
@@ -208,27 +249,49 @@ class ChatService:
                 chapters=chapters_text or "No chapters available"
             )
 
-            response = self.client.chat.completions.create(
+            messages = [
+                {"role": "system", "content": SUGGESTED_PROMPTS_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt}
+            ]
+
+            response = self.provider.generate(
+                messages=messages,
                 model=model,
-                messages=[
-                    {"role": "system", "content": SUGGESTED_PROMPTS_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt}
-                ],
                 temperature=0.7,
-                max_tokens=300
+                max_tokens=300,
+                json_mode=True
             )
 
-            content = response.choices[0].message.content.strip()
+            content = response.content.strip()
+            print(f"[ChatService] Raw response: {content[:200]}...")
 
-            # Parse JSON response
+            # Parse JSON response - handle various formats
+            parsed_content = content
+
             # Handle markdown code blocks if present
-            if content.startswith("```"):
-                content = content.split("```")[1]
-                if content.startswith("json"):
-                    content = content[4:]
-                content = content.strip()
+            if parsed_content.startswith("```"):
+                parts = parsed_content.split("```")
+                if len(parts) >= 2:
+                    parsed_content = parts[1]
+                    if parsed_content.startswith("json"):
+                        parsed_content = parsed_content[4:]
+                    parsed_content = parsed_content.strip()
 
-            prompts = json.loads(content)
+            prompts = json.loads(parsed_content)
+
+            # Handle dict response like {"prompts": [...]} or {"questions": [...]}
+            if isinstance(prompts, dict):
+                # Try common keys
+                for key in ['prompts', 'questions', 'suggested_prompts']:
+                    if key in prompts and isinstance(prompts[key], list):
+                        prompts = prompts[key]
+                        break
+                else:
+                    # Get first list value from dict
+                    for v in prompts.values():
+                        if isinstance(v, list):
+                            prompts = v
+                            break
 
             # Ensure we have exactly 3 prompts
             if isinstance(prompts, list) and len(prompts) >= 3:
@@ -239,8 +302,35 @@ class ChatService:
                     prompts.append("What are the key takeaways from this video?")
                 return prompts
 
-            return []
+            print(f"[ChatService] Unexpected response format: {type(prompts)}")
+            return self._get_fallback_prompts()
 
         except Exception as e:
             print(f"[ChatService] Error generating suggested prompts: {e}")
-            return []
+            import traceback
+            traceback.print_exc()
+            return self._get_fallback_prompts()
+
+    def _get_fallback_prompts(self, count: int = 3, exclude: List[str] = None) -> List[str]:
+        """
+        Get fallback suggested prompts when AI generation fails.
+
+        Like TLDW, we have predefined high-quality prompts to fall back to.
+
+        Args:
+            count: Number of prompts to return
+            exclude: List of prompts to exclude (already asked)
+
+        Returns:
+            List of fallback prompt strings
+        """
+        exclude_lower = set(p.lower() for p in (exclude or []))
+        result = []
+
+        for prompt in FALLBACK_SUGGESTED_PROMPTS:
+            if prompt.lower() not in exclude_lower:
+                result.append(prompt)
+            if len(result) >= count:
+                break
+
+        return result
