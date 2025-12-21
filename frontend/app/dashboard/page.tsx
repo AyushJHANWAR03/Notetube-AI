@@ -5,10 +5,12 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import UserProfile from '@/components/UserProfile';
 import VideoInput from '@/components/video/VideoInput';
-import VideoList from '@/components/video/VideoList';
+import VideoCard from '@/components/video/VideoCard';
 import SignInModal from '@/components/SignInModal';
 import LimitReachedModal from '@/components/LimitReachedModal';
 import api from '@/lib/api';
+import { videoApi } from '@/lib/videoApi';
+import { Video } from '@/lib/types';
 
 interface QuotaInfo {
   videos_analyzed: number;
@@ -19,18 +21,57 @@ interface QuotaInfo {
 export default function Dashboard() {
   const { user, loading, login } = useAuth();
   const router = useRouter();
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [showSignInModal, setShowSignInModal] = useState(false);
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
   const [quota, setQuota] = useState<QuotaInfo | null>(null);
+  const [recentVideos, setRecentVideos] = useState<Video[]>([]);
+  const [allVideos, setAllVideos] = useState<Video[]>([]);
+  const [loadingRecent, setLoadingRecent] = useState(false);
+  const [showAllVideos, setShowAllVideos] = useState(false);
+  const [totalVideoCount, setTotalVideoCount] = useState(0);
 
-  // Fetch quota when user is authenticated
+  // Fetch quota and recent videos when user is authenticated
   useEffect(() => {
     if (user) {
       fetchQuota();
+      fetchRecentVideos();
     }
   }, [user]);
+
+  const fetchRecentVideos = async () => {
+    try {
+      setLoadingRecent(true);
+      // Fetch 4 for display, total count comes from API
+      const response = await videoApi.listVideos({ limit: 4 });
+      setRecentVideos(response.videos);
+      // Use actual total count from API
+      setTotalVideoCount(response.total);
+    } catch (err) {
+      console.error('Failed to fetch recent videos:', err);
+    } finally {
+      setLoadingRecent(false);
+    }
+  };
+
+  const fetchAllVideos = async () => {
+    try {
+      setLoadingRecent(true);
+      const response = await videoApi.listVideos({ limit: 50 });
+      setAllVideos(response.videos);
+    } catch (err) {
+      console.error('Failed to fetch all videos:', err);
+    } finally {
+      setLoadingRecent(false);
+    }
+  };
+
+  const handleViewAll = () => {
+    if (!showAllVideos) {
+      fetchAllVideos();
+    }
+    setShowAllVideos(!showAllVideos);
+  };
 
   const fetchQuota = async () => {
     try {
@@ -197,26 +238,68 @@ export default function Dashboard() {
             onVideoSubmitted={handleVideoSubmitted}
             onBeforeSubmit={handleGenerateNotesAttempt}
           />
-          {/* Quota indicator for authenticated users */}
-          {user && quota && (
-            <div className="mt-4 text-center">
-              <span className={`text-sm ${quota.remaining <= 1 ? 'text-amber-400' : 'text-gray-500'}`}>
-                {quota.remaining > 0 ? (
-                  <>
-                    <span className="font-medium">{quota.remaining}</span> video{quota.remaining !== 1 ? 's' : ''} remaining
-                  </>
-                ) : (
-                  <button
-                    onClick={() => setShowLimitModal(true)}
-                    className="text-amber-400 hover:text-amber-300 underline transition-colors"
-                  >
-                    Limit reached - Request more
-                  </button>
-                )}
-              </span>
-            </div>
-          )}
         </div>
+
+        {/* Videos Section - Show for authenticated users with videos */}
+        {user && recentVideos.length > 0 && (
+          <div className="max-w-6xl mx-auto mb-12">
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex items-center gap-3">
+                <h3 className="text-lg font-semibold text-white">
+                  Your Videos {totalVideoCount > 0 && <span className="text-gray-400 font-normal">({totalVideoCount})</span>}
+                </h3>
+                {/* Quota indicator - only show when low (<=2) or exhausted */}
+                {quota && quota.remaining <= 2 && (
+                  quota.remaining === 0 ? (
+                    <button
+                      onClick={() => setShowLimitModal(true)}
+                      className="text-xs text-amber-400 hover:text-amber-300 transition-colors inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-400/10"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      Limit reached
+                    </button>
+                  ) : (
+                    <span className="text-xs text-amber-400/80 px-2 py-0.5 rounded-full bg-amber-400/10">
+                      {quota.remaining} left
+                    </span>
+                  )
+                )}
+              </div>
+              {totalVideoCount > 4 && (
+                <button
+                  onClick={handleViewAll}
+                  className="text-sm text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1"
+                >
+                  {showAllVideos ? 'Show less' : 'View all'}
+                  <svg
+                    className={`w-4 h-4 transition-transform ${showAllVideos ? 'rotate-180' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            {/* Video Grid - show 4 or all */}
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+              {(showAllVideos ? allVideos : recentVideos.slice(0, 4)).map((video) => (
+                <VideoCard key={video.id} video={video} compact />
+              ))}
+            </div>
+
+            {/* Loading indicator when fetching all */}
+            {loadingRecent && showAllVideos && allVideos.length === 0 && (
+              <div className="flex justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Features Grid - 6 features in 2 rows */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
@@ -230,13 +313,6 @@ export default function Dashboard() {
             </div>
           ))}
         </div>
-
-        {/* Video List Section - Only show for authenticated users */}
-        {user && (
-          <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
-            <VideoList refreshTrigger={refreshTrigger} />
-          </div>
-        )}
       </main>
 
       {/* Sign In Modal */}

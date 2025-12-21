@@ -7,6 +7,7 @@ import Link from 'next/link';
 interface VideoCardProps {
   video: Video;
   onDelete?: (videoId: string) => void;
+  compact?: boolean;
 }
 
 const statusConfig = {
@@ -28,7 +29,7 @@ const statusConfig = {
   }
 };
 
-export default function VideoCard({ video, onDelete }: VideoCardProps) {
+export default function VideoCard({ video, onDelete, compact = false }: VideoCardProps) {
   const status = statusConfig[video.status];
   const thumbnail = video.thumbnail_url || getYouTubeThumbnail(video.youtube_video_id, 'hq');
 
@@ -42,7 +43,7 @@ export default function VideoCard({ video, onDelete }: VideoCardProps) {
         <img
           src={thumbnail}
           alt={video.title || 'Video thumbnail'}
-          className="w-full h-40 object-cover"
+          className={`w-full object-cover ${compact ? 'h-28' : 'h-40'}`}
           onError={(e) => {
             (e.target as HTMLImageElement).src = getYouTubeThumbnail(video.youtube_video_id, 'default');
           }}
@@ -57,19 +58,19 @@ export default function VideoCard({ video, onDelete }: VideoCardProps) {
         {video.status === 'PROCESSING' && (
           <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
             <div className="text-white text-center">
-              <svg className="animate-spin h-8 w-8 mx-auto mb-2" viewBox="0 0 24 24">
+              <svg className={`animate-spin mx-auto mb-2 ${compact ? 'h-6 w-6' : 'h-8 w-8'}`} viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
               </svg>
-              <p className="text-sm">Processing...</p>
+              <p className="text-xs">Processing...</p>
             </div>
           </div>
         )}
       </div>
 
       {/* Content */}
-      <div className="p-4 flex flex-col h-[120px]">
-        <h3 className="font-semibold text-white line-clamp-2 min-h-[48px]">
+      <div className={`flex flex-col ${compact ? 'p-3 h-[80px]' : 'p-4 h-[120px]'}`}>
+        <h3 className={`font-semibold text-white ${compact ? 'text-sm line-clamp-2 min-h-[40px]' : 'line-clamp-2 min-h-[48px]'}`}>
           {video.title || 'Processing...'}
         </h3>
 
@@ -78,12 +79,14 @@ export default function VideoCard({ video, onDelete }: VideoCardProps) {
             {status.label}
           </span>
 
-          <span className="text-xs text-gray-400">
-            {new Date(video.created_at).toLocaleDateString()}
-          </span>
+          {!compact && (
+            <span className="text-xs text-gray-400">
+              {new Date(video.created_at).toLocaleDateString()}
+            </span>
+          )}
         </div>
 
-        {video.status === 'FAILED' && video.failure_reason && (
+        {video.status === 'FAILED' && video.failure_reason && !compact && (
           <p className="text-xs text-red-400 mt-2 line-clamp-2">
             {video.failure_reason}
           </p>
