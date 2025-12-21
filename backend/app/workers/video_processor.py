@@ -267,6 +267,17 @@ def _process_video_sync(
                 video_title,
                 video_duration
             )
+
+            # For long videos, derive key_timestamps from chapters (better full-video coverage)
+            if video_duration > 600 and ai_results["chapters"]["chapters"]:
+                print(f"[STEP 5/7] Deriving key_timestamps from chapters (long video)...")
+                key_timestamps = _derive_key_timestamps_from_chapters(
+                    ai_results["chapters"]["chapters"],
+                    video_duration
+                )
+                ai_results["structured"]["key_timestamps"] = key_timestamps
+                print(f"[STEP 5/7] ✓ Derived {len(key_timestamps)} key_timestamps from chapters")
+
             print(f"[STEP 5/7] ✓ AI content generated")
 
             # Generate suggested chat prompts
@@ -487,6 +498,64 @@ def _generate_ai_content_parallel(
 
     print(f"  [AI] All 2 AI tasks completed successfully")
     return results
+
+
+def _derive_key_timestamps_from_chapters(
+    chapters: List[Dict[str, Any]],
+    video_duration: float
+) -> List[Dict[str, Any]]:
+    """
+    Derive key_timestamps from chapters for full video coverage.
+
+    For long videos, chapters already have good temporal distribution via
+    the chunked map-reduce approach. We pick 5-8 chapters as key moments.
+
+    Args:
+        chapters: List of chapter dictionaries from generate_chapters_chunked()
+        video_duration: Video duration in seconds
+
+    Returns:
+        List of key_timestamp dictionaries with label, time (MM:SS), seconds
+    """
+    if not chapters:
+        return []
+
+    # Skip "Introduction" chapter if it exists at 0
+    meaningful_chapters = [
+        ch for ch in chapters
+        if ch.get("start_time", 0) > 0 or ch.get("title", "").lower() != "introduction"
+    ]
+
+    # If we have <= 8 chapters, use all of them
+    # If we have more, pick 8 distributed across the video (60/40 split)
+    if len(meaningful_chapters) <= 8:
+        selected = meaningful_chapters
+    else:
+        # Apply 60/40 temporal distribution
+        boundary = video_duration * 0.6
+        first_half = [ch for ch in meaningful_chapters if ch.get("start_time", 0) < boundary]
+        second_half = [ch for ch in meaningful_chapters if ch.get("start_time", 0) >= boundary]
+
+        # Pick up to 5 from first 60%, up to 3 from last 40%
+        selected = first_half[:5] + second_half[:3]
+
+    # Convert to key_timestamp format
+    key_timestamps = []
+    for ch in selected:
+        start_time = ch.get("start_time", 0)
+        mins = int(start_time // 60)
+        secs = int(start_time % 60)
+
+        key_timestamps.append({
+            "label": ch.get("title", "Key moment"),
+            "time": f"{mins}:{secs:02d}",
+            "seconds": start_time
+        })
+
+    # Sort by time
+    key_timestamps.sort(key=lambda x: x["seconds"])
+
+    return key_timestamps
 
 
 def enqueue_video_processing(video_id: UUID, user_id: UUID, youtube_url: str) -> str:

@@ -340,9 +340,10 @@ class AINotesService:
         max_chars = TokenLimits.STRUCTURED_NOTES_MAX_CHARS
         truncated_transcript = transcript[:max_chars] if len(transcript) > max_chars else transcript
 
-        # Build timestamped context for key_timestamps
+        # Build timestamped context for key_timestamps - use ALL segments
+        # GPT-4o-mini has 128K context, so we can handle full transcripts
         timestamp_context = []
-        for seg in segments[:200]:  # Sample of segments for timestamps
+        for seg in segments:
             timestamp = seg.get('start', 0)
             text = seg.get('text', '')
             mins = int(timestamp // 60)
