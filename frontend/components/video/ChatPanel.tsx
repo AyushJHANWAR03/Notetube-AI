@@ -41,13 +41,14 @@ export default function ChatPanel({
   }, [messages]);
 
   // Handle pending message from "Explain" button
+  // Wait for history to load before sending the pending message
   useEffect(() => {
-    if (pendingMessage && !hasSentPendingRef.current && !isStreaming) {
+    if (pendingMessage && !hasSentPendingRef.current && !isStreaming && !isLoadingHistory) {
       hasSentPendingRef.current = true;
       sendMessage(`Explain this: "${pendingMessage}"`);
       onPendingMessageHandled?.();
     }
-  }, [pendingMessage, isStreaming, sendMessage, onPendingMessageHandled]);
+  }, [pendingMessage, isStreaming, isLoadingHistory, sendMessage, onPendingMessageHandled]);
 
   // Reset pending ref when pendingMessage changes to a new value
   useEffect(() => {

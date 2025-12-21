@@ -149,7 +149,7 @@ export default function NotesPanel({ videoId, notes, onSeek, onNotesChange }: No
                     className="fixed inset-0 z-40"
                     onClick={() => setOpenDropdownId(null)}
                   />
-                  <div className="absolute left-0 bottom-full mb-1 w-48 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 py-1">
+                  <div className="absolute left-0 top-full mt-1 w-48 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 py-1">
                     {REWRITE_STYLES.map((style) => (
                       <button
                         key={style.value}
