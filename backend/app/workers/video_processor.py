@@ -474,7 +474,8 @@ def _generate_ai_content_parallel(
         result = ai_service.generate_structured_notes(
             transcript,
             segments,
-            video_title=video_title
+            video_title=video_title,
+            video_duration=video_duration
         )
         print(f"  [AI] ✓ Structured notes done ({result['tokens_used']} tokens)")
         return result

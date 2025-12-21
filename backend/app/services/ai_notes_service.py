@@ -32,6 +32,25 @@ class AINotesServiceError(Exception):
     pass
 
 
+def _get_flashcard_count_for_duration(video_duration: float) -> str:
+    """Get recommended flashcard count range based on video duration.
+
+    Args:
+        video_duration: Video duration in seconds
+
+    Returns:
+        String range like "5-8", "8-12", etc.
+    """
+    if video_duration < 600:  # < 10 min
+        return "5-8"
+    elif video_duration < 1800:  # 10-30 min
+        return "8-12"
+    elif video_duration < 3600:  # 30-60 min
+        return "12-18"
+    else:  # > 60 min
+        return "18-25"
+
+
 class AINotesService:
     """Service for generating AI-powered notes and chapters from transcripts.
 
@@ -307,6 +326,7 @@ class AINotesService:
         transcript: str,
         segments: List[Dict[str, Any]],
         video_title: Optional[str] = None,
+        video_duration: float = 0,
         model: str = AIModels.NOTES_MODEL
     ) -> Dict[str, Any]:
         """
@@ -316,6 +336,7 @@ class AINotesService:
             transcript: Raw transcript text
             segments: List of transcript segments with timestamps
             video_title: Optional video title for context
+            video_duration: Video duration in seconds (for dynamic flashcard count)
             model: OpenAI model to use
 
         Returns:
@@ -352,6 +373,14 @@ class AINotesService:
 
         timestamp_text = "\n".join(timestamp_context)
 
+        # Calculate dynamic flashcard count based on video duration
+        flashcard_count = _get_flashcard_count_for_duration(video_duration)
+
+        # Format system prompt with dynamic flashcard count
+        system_prompt = STRUCTURED_NOTES_SYSTEM_PROMPT.format(
+            flashcard_count=flashcard_count
+        )
+
         video_title_section = f'Video Title: {video_title}' if video_title else ''
         user_prompt = STRUCTURED_NOTES_USER_PROMPT_TEMPLATE.format(
             video_title_section=video_title_section,
@@ -361,7 +390,7 @@ class AINotesService:
 
         try:
             messages = [
-                {"role": "system", "content": STRUCTURED_NOTES_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ]
 
