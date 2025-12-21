@@ -90,22 +90,30 @@ class ChatService:
             topics_str = ", ".join(topics[:10])  # Max 10 topics
             parts.append(f"Main topics: {topics_str}")
 
-        # Add chapters
+        # Add chapters with timestamps for TLDW-like referencing
         chapters = getattr(notes, 'chapters', None)
         if chapters and isinstance(chapters, list):
             chapter_lines = []
-            for i, ch in enumerate(chapters[:10]):  # Max 10 chapters
+            for i, ch in enumerate(chapters[:15]):  # Max 15 chapters for more context
                 title = ch.get('title', f'Chapter {i+1}')
+                start_time = ch.get('start_time', 0)
                 summary = ch.get('summary', '')
+
+                # Format timestamp as [MM:SS] or [H:MM:SS]
+                if start_time >= 3600:
+                    timestamp = f"[{int(start_time // 3600)}:{int((start_time % 3600) // 60):02d}:{int(start_time % 60):02d}]"
+                else:
+                    timestamp = f"[{int(start_time // 60)}:{int(start_time % 60):02d}]"
+
                 if summary:
                     # Truncate chapter summary
                     if len(summary) > 100:
                         summary = summary[:100] + "..."
-                    chapter_lines.append(f"- {title}: {summary}")
+                    chapter_lines.append(f"- {timestamp} {title}: {summary}")
                 else:
-                    chapter_lines.append(f"- {title}")
+                    chapter_lines.append(f"- {timestamp} {title}")
             if chapter_lines:
-                parts.append("Chapters:\n" + "\n".join(chapter_lines))
+                parts.append("Chapters (with timestamps):\n" + "\n".join(chapter_lines))
 
         context = "\n\n".join(parts)
 
@@ -240,16 +248,35 @@ class ChatService:
             )
 
             content = response.content.strip()
+            print(f"[ChatService] Raw response: {content[:200]}...")
 
-            # Parse JSON response
+            # Parse JSON response - handle various formats
+            parsed_content = content
+
             # Handle markdown code blocks if present
-            if content.startswith("```"):
-                content = content.split("```")[1]
-                if content.startswith("json"):
-                    content = content[4:]
-                content = content.strip()
+            if parsed_content.startswith("```"):
+                parts = parsed_content.split("```")
+                if len(parts) >= 2:
+                    parsed_content = parts[1]
+                    if parsed_content.startswith("json"):
+                        parsed_content = parsed_content[4:]
+                    parsed_content = parsed_content.strip()
 
-            prompts = json.loads(content)
+            prompts = json.loads(parsed_content)
+
+            # Handle dict response like {"prompts": [...]} or {"questions": [...]}
+            if isinstance(prompts, dict):
+                # Try common keys
+                for key in ['prompts', 'questions', 'suggested_prompts']:
+                    if key in prompts and isinstance(prompts[key], list):
+                        prompts = prompts[key]
+                        break
+                else:
+                    # Get first list value from dict
+                    for v in prompts.values():
+                        if isinstance(v, list):
+                            prompts = v
+                            break
 
             # Ensure we have exactly 3 prompts
             if isinstance(prompts, list) and len(prompts) >= 3:
@@ -260,8 +287,11 @@ class ChatService:
                     prompts.append("What are the key takeaways from this video?")
                 return prompts
 
+            print(f"[ChatService] Unexpected response format: {type(prompts)}")
             return []
 
         except Exception as e:
             print(f"[ChatService] Error generating suggested prompts: {e}")
+            import traceback
+            traceback.print_exc()
             return []
