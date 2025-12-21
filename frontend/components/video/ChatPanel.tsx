@@ -9,6 +9,7 @@ interface ChatPanelProps {
   suggestedPrompts?: string[];
   pendingMessage?: string;
   onPendingMessageHandled?: () => void;
+  onSeek?: (seconds: number) => void;
 }
 
 export default function ChatPanel({
@@ -17,6 +18,7 @@ export default function ChatPanel({
   suggestedPrompts,
   pendingMessage,
   onPendingMessageHandled,
+  onSeek,
 }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -26,6 +28,7 @@ export default function ChatPanel({
   const {
     messages,
     isStreaming,
+    isLoadingHistory,
     error,
     sendMessage,
     clearMessages,
@@ -72,6 +75,16 @@ export default function ChatPanel({
       handleSubmit();
     }
   };
+
+  // Loading state
+  if (isLoadingHistory) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center">
+        <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+        <p className="text-gray-400 text-sm mt-2">Loading chat history...</p>
+      </div>
+    );
+  }
 
   // Empty state - no messages yet
   if (messages.length === 0 && !isStreaming) {
@@ -145,7 +158,7 @@ export default function ChatPanel({
       {/* Messages area - scrollable */}
       <div className="flex-1 overflow-y-auto space-y-4 p-4 min-h-0">
         {messages.map((msg, i) => (
-          <ChatMessage key={i} message={msg} isStreaming={isStreaming && i === messages.length - 1 && msg.role === 'assistant'} />
+          <ChatMessage key={i} message={msg} isStreaming={isStreaming && i === messages.length - 1 && msg.role === 'assistant'} onSeek={onSeek} />
         ))}
         {error && (
           <div className="px-4 py-2 bg-red-900/30 border border-red-700 rounded-lg text-red-400 text-sm">
@@ -199,8 +212,72 @@ export default function ChatPanel({
   );
 }
 
+// Parse timestamp string like "5:32" or "1:05:32" to seconds
+function parseTimestamp(timestamp: string): number {
+  const parts = timestamp.split(':').map(Number);
+  if (parts.length === 2) {
+    // MM:SS
+    return parts[0] * 60 + parts[1];
+  } else if (parts.length === 3) {
+    // H:MM:SS
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+  return 0;
+}
+
+// Render message content with clickable timestamps
+function renderMessageWithTimestamps(
+  content: string,
+  onSeek?: (seconds: number) => void
+): React.ReactNode[] {
+  // Match timestamps like [5:32], [12:45], [1:05:32]
+  const timestampRegex = /\[(\d{1,2}:\d{2}(?::\d{2})?)\]/g;
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = timestampRegex.exec(content)) !== null) {
+    // Add text before the timestamp
+    if (match.index > lastIndex) {
+      parts.push(content.slice(lastIndex, match.index));
+    }
+
+    const timestamp = match[1];
+    const seconds = parseTimestamp(timestamp);
+
+    // Add clickable timestamp
+    parts.push(
+      <button
+        key={`ts-${match.index}`}
+        onClick={() => onSeek?.(seconds)}
+        className="inline-flex items-center px-1.5 py-0.5 mx-0.5 text-xs font-medium bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 hover:text-purple-200 rounded border border-purple-500/50 transition-colors cursor-pointer"
+        title={`Jump to ${timestamp}`}
+      >
+        [{timestamp}]
+      </button>
+    );
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Add remaining text after the last timestamp
+  if (lastIndex < content.length) {
+    parts.push(content.slice(lastIndex));
+  }
+
+  return parts.length > 0 ? parts : [content];
+}
+
 // Individual message component
-function ChatMessage({ message, isStreaming }: { message: ChatMessageItem; isStreaming: boolean }) {
+function ChatMessage({
+  message,
+  isStreaming,
+  onSeek
+}: {
+  message: ChatMessageItem;
+  isStreaming: boolean;
+  onSeek?: (seconds: number) => void;
+}) {
   const isUser = message.role === 'user';
 
   return (
@@ -213,7 +290,10 @@ function ChatMessage({ message, isStreaming }: { message: ChatMessageItem; isStr
         }`}
       >
         <p className="text-sm whitespace-pre-wrap">
-          {message.content}
+          {isUser
+            ? message.content
+            : renderMessageWithTimestamps(message.content, onSeek)
+          }
           {isStreaming && (
             <span className="inline-block w-1 h-4 ml-0.5 bg-current animate-pulse" />
           )}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -17,6 +17,7 @@ interface UseStreamingChatOptions {
 interface UseStreamingChatReturn {
   messages: ChatMessageItem[];
   isStreaming: boolean;
+  isLoadingHistory: boolean;
   error: string | null;
   sendMessage: (message: string) => Promise<void>;
   clearMessages: () => void;
@@ -28,8 +29,50 @@ export function useStreamingChat({
 }: UseStreamingChatOptions): UseStreamingChatReturn {
   const [messages, setMessages] = useState<ChatMessageItem[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const hasLoadedHistory = useRef(false);
+
+  // Load chat history on mount
+  useEffect(() => {
+    const loadChatHistory = async () => {
+      if (hasLoadedHistory.current) return;
+      hasLoadedHistory.current = true;
+
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          setIsLoadingHistory(false);
+          return;
+        }
+
+        const response = await fetch(`${API_URL}/api/videos/${videoId}/chat/history`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.messages && data.messages.length > 0) {
+            // Convert API messages to ChatMessageItem format
+            const historyMessages: ChatMessageItem[] = data.messages.map((m: any) => ({
+              role: m.role as 'user' | 'assistant',
+              content: m.content,
+            }));
+            setMessages(historyMessages);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load chat history:', err);
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    };
+
+    loadChatHistory();
+  }, [videoId]);
 
   const sendMessage = useCallback(async (message: string) => {
     if (!message.trim() || isStreaming) return;
@@ -136,19 +179,36 @@ export function useStreamingChat({
     }
   }, [videoId, messages, isStreaming, onError]);
 
-  const clearMessages = useCallback(() => {
+  const clearMessages = useCallback(async () => {
     // Abort any ongoing stream
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
+
+    // Clear from DB via API
+    try {
+      const token = localStorage.getItem('token');
+      if (token) {
+        await fetch(`${API_URL}/api/videos/${videoId}/chat/history`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+      }
+    } catch (err) {
+      console.error('Failed to clear chat history from server:', err);
+    }
+
     setMessages([]);
     setError(null);
     setIsStreaming(false);
-  }, []);
+  }, [videoId]);
 
   return {
     messages,
     isStreaming,
+    isLoadingHistory,
     error,
     sendMessage,
     clearMessages,

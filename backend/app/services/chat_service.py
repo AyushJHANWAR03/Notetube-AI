@@ -4,6 +4,11 @@ Chat Service for AI-powered conversations about video content.
 Uses context from video notes (summary, chapters, topics) to answer questions.
 Supports streaming responses via SSE.
 
+TLDW-inspired features:
+- Full transcript context for accurate answers
+- Timestamp references in responses [MM:SS]
+- Fallback suggested questions when AI fails
+
 Note: Streaming chat uses OpenAI directly for low latency.
 Suggested prompts use Groq (with OpenAI fallback) for speed.
 """
@@ -22,6 +27,16 @@ from app.prompts import (
 )
 
 
+# Fallback suggested prompts when AI generation fails (inspired by TLDW)
+FALLBACK_SUGGESTED_PROMPTS = [
+    "What are the main takeaways from this video?",
+    "Can you explain the key concepts discussed?",
+    "What practical advice does this video offer?",
+    "What examples or stories are shared?",
+    "How can I apply these ideas?",
+]
+
+
 class ChatServiceError(Exception):
     """Custom exception for Chat service errors."""
     pass
@@ -34,8 +49,8 @@ class ChatService:
     Uses Groq (with OpenAI fallback) for suggested prompts.
     """
 
-    # Limits
-    MAX_CONTEXT_CHARS = 2000
+    # Limits - increased for better context (like TLDW)
+    MAX_CONTEXT_CHARS = 8000  # Increased from 2000 for more context
     MAX_HISTORY_MESSAGES = 10
 
     def __init__(self, api_key: Optional[str] = None):
@@ -288,10 +303,34 @@ class ChatService:
                 return prompts
 
             print(f"[ChatService] Unexpected response format: {type(prompts)}")
-            return []
+            return self._get_fallback_prompts()
 
         except Exception as e:
             print(f"[ChatService] Error generating suggested prompts: {e}")
             import traceback
             traceback.print_exc()
-            return []
+            return self._get_fallback_prompts()
+
+    def _get_fallback_prompts(self, count: int = 3, exclude: List[str] = None) -> List[str]:
+        """
+        Get fallback suggested prompts when AI generation fails.
+
+        Like TLDW, we have predefined high-quality prompts to fall back to.
+
+        Args:
+            count: Number of prompts to return
+            exclude: List of prompts to exclude (already asked)
+
+        Returns:
+            List of fallback prompt strings
+        """
+        exclude_lower = set(p.lower() for p in (exclude or []))
+        result = []
+
+        for prompt in FALLBACK_SUGGESTED_PROMPTS:
+            if prompt.lower() not in exclude_lower:
+                result.append(prompt)
+            if len(result) >= count:
+                break
+
+        return result

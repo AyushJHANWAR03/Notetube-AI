@@ -675,6 +675,7 @@ export default function VideoDetailPage() {
               suggestedPrompts={notes.suggested_prompts}
               pendingMessage={pendingChatMessage || undefined}
               onPendingMessageHandled={() => setPendingChatMessage(null)}
+              onSeek={seekToTime}
             />
           )}
         </div>
