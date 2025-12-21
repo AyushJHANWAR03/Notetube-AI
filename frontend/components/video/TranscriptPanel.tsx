@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
-import { TranscriptSegment } from '@/lib/types';
+import { TranscriptSegment, SeekResponse } from '@/lib/types';
 
 interface SegmentGroup {
   id: number;
@@ -26,6 +26,12 @@ interface TranscriptPanelProps {
   onToggleAutoScroll: () => void;
   onExplain?: (text: string) => void;
   onTakeNotes?: (text: string) => void;
+  // Take Me There (AI Search) props
+  onTakeMeThere?: (query: string) => Promise<void>;
+  isSearching?: boolean;
+  searchResult?: SeekResponse | null;
+  searchError?: string | null;
+  onClearSearch?: () => void;
 }
 
 // Group segments for better readability (2-3 per group)
@@ -81,7 +87,12 @@ export default function TranscriptPanel({
   autoScroll,
   onToggleAutoScroll,
   onExplain,
-  onTakeNotes
+  onTakeNotes,
+  onTakeMeThere,
+  isSearching = false,
+  searchResult,
+  searchError,
+  onClearSearch
 }: TranscriptPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
@@ -92,6 +103,33 @@ export default function TranscriptPanel({
     y: 0,
     text: ''
   });
+
+  // AI Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showDiscoveryTip, setShowDiscoveryTip] = useState(false);
+
+  // Check localStorage for discovery tip on mount
+  useEffect(() => {
+    const dismissed = localStorage.getItem('transcriptTipDismissed');
+    if (!dismissed) {
+      setShowDiscoveryTip(true);
+    }
+  }, []);
+
+  const dismissDiscoveryTip = useCallback(() => {
+    localStorage.setItem('transcriptTipDismissed', 'true');
+    setShowDiscoveryTip(false);
+  }, []);
+
+  const handleSearch = useCallback(async () => {
+    if (!searchQuery.trim() || !onTakeMeThere) return;
+    await onTakeMeThere(searchQuery);
+  }, [searchQuery, onTakeMeThere]);
+
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery('');
+    onClearSearch?.();
+  }, [onClearSearch]);
 
   // Group segments
   const groupedSegments = useMemo(() => groupSegments(segments), [segments]);
@@ -217,25 +255,128 @@ export default function TranscriptPanel({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header with Auto toggle */}
-      <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-700">
-        <span className="text-gray-400 text-sm">
-          {groupedSegments.length} segments
-        </span>
-        <button
-          onClick={onToggleAutoScroll}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-colors ${
-            autoScroll
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-          }`}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-          </svg>
-          Auto
-        </button>
+      {/* Header with AI Search and Auto toggle */}
+      <div className="flex flex-col gap-2 mb-4 pb-3 border-b border-gray-700">
+        {/* First-time discovery tip - dismissible (combined: search + text selection) */}
+        {showDiscoveryTip && (
+          <div className="flex items-center justify-between bg-blue-900/30 border border-blue-700/50 rounded-lg px-3 py-2">
+            <div className="flex items-center gap-2">
+              <span className="text-yellow-400">💡</span>
+              <span className="text-sm text-blue-200">
+                Search to find moments • Select text for AI help
+              </span>
+            </div>
+            <button
+              onClick={dismissDiscoveryTip}
+              className="text-gray-400 hover:text-white p-1 transition-colors"
+              aria-label="Dismiss tip"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {/* Search bar + Auto toggle row */}
+        <div className="flex items-center gap-2">
+          {onTakeMeThere ? (
+            <div className="flex-1 relative">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSearch();
+                  }
+                }}
+                placeholder="Search anything in video..."
+                disabled={isSearching}
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg pl-9 pr-10 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+              />
+              {isSearching ? (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+              ) : searchQuery && (
+                <button
+                  onClick={handleClearSearch}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          ) : (
+            <span className="flex-1 text-gray-400 text-sm">
+              {groupedSegments.length} segments
+            </span>
+          )}
+          <button
+            onClick={onToggleAutoScroll}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-colors flex-shrink-0 ${
+              autoScroll
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+            Auto
+          </button>
+        </div>
+
+        {/* Search result - inline below search bar */}
+        {searchResult && searchResult.timestamp !== null && (
+          <button
+            onClick={() => {
+              onSeek(searchResult.timestamp!);
+              handleClearSearch();
+            }}
+            className={`w-full text-left p-3 rounded-lg border transition-all hover:scale-[1.01] ${
+              searchResult.confidence === 'high'
+                ? 'bg-green-900/30 border-green-700 hover:bg-green-900/40'
+                : searchResult.confidence === 'medium'
+                ? 'bg-yellow-900/30 border-yellow-700 hover:bg-yellow-900/40'
+                : 'bg-gray-700/30 border-gray-600 hover:bg-gray-700/40'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-mono text-lg text-blue-400 font-bold">
+                {formatTime(searchResult.timestamp)}
+              </span>
+              <span className={`text-xs px-2 py-0.5 rounded ${
+                searchResult.confidence === 'high' ? 'text-green-400 bg-green-900/50' :
+                searchResult.confidence === 'medium' ? 'text-yellow-400 bg-yellow-900/50' :
+                'text-gray-400 bg-gray-700/50'
+              }`}>
+                {searchResult.confidence === 'high' ? 'Best Match' : searchResult.confidence === 'medium' ? 'Good Match' : 'Partial'}
+              </span>
+            </div>
+            {searchResult.matched_text && (
+              <p className="text-xs text-gray-400 line-clamp-2">"{searchResult.matched_text}"</p>
+            )}
+          </button>
+        )}
+
+        {/* No match found */}
+        {searchResult && searchResult.timestamp === null && (
+          <p className="text-sm text-gray-500 text-center py-2">
+            No match found. Try different keywords.
+          </p>
+        )}
+
+        {/* Search error */}
+        {searchError && (
+          <p className="text-sm text-red-400 text-center py-2">{searchError}</p>
+        )}
       </div>
 
       {/* Transcript segments */}
@@ -308,11 +449,14 @@ export default function TranscriptPanel({
         })}
       </div>
 
-      {/* Helper text */}
-      <div className="mt-3 pt-2 border-t border-gray-700">
-        <p className="text-xs text-gray-500 text-center">
-          Select any text to explain or take notes
-        </p>
+      {/* Helper text - prominent styling */}
+      <div className="mt-3 pt-3 border-t border-gray-700">
+        <div className="bg-purple-900/20 border border-purple-700/30 rounded-lg px-3 py-2">
+          <p className="text-sm text-purple-300 text-center flex items-center justify-center gap-2">
+            <span>✨</span>
+            <span>Select any text above to explain or save to notes</span>
+          </p>
+        </div>
       </div>
     </div>
   );
