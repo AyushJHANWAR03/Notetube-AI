@@ -67,7 +67,7 @@ async def create_video(
             detail=str(e)
         )
 
-    # Check for duplicate
+    # Check for duplicate (user already has this video)
     existing_video = await video_service.check_duplicate_video(
         current_user.id,
         youtube_video_id,
@@ -82,7 +82,28 @@ async def create_video(
             message="Video already exists in your library"
         )
 
-    # Create new video record
+    # Global cache check - has ANY user already processed this video?
+    cached_video = await video_service.find_ready_video_globally(
+        youtube_video_id,
+        db
+    )
+
+    if cached_video:
+        # Clone to this user's library instantly!
+        # This does NOT count towards user's quota since no AI cost was incurred
+        cloned_video = await video_service.clone_video_for_user(
+            source_video=cached_video,
+            user_id=current_user.id,
+            original_url=request.url,
+            db=db
+        )
+        return VideoCreateResponse(
+            video=VideoListItem.model_validate(cloned_video),
+            job_id="",  # No job needed - already processed!
+            message="Video instantly loaded from cache!"
+        )
+
+    # Create new video record (no cache hit - needs full processing)
     video = await video_service.create_video(
         user_id=current_user.id,
         youtube_video_id=youtube_video_id,
