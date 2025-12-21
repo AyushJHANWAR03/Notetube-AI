@@ -121,6 +121,18 @@ async def stream_chat_response(
             db.add(assistant_msg)
             await db.commit()
 
+            # Generate follow-up prompts
+            try:
+                followups = chat_service.generate_followup_prompts(
+                    user_question=request.message,
+                    assistant_answer=full_response
+                )
+                # Send follow-ups as JSON event
+                import json
+                yield f"data: [FOLLOWUPS]{json.dumps(followups)}\n\n"
+            except Exception as e:
+                print(f"[Chat] Error generating followups: {e}")
+
             # Send done event
             yield "data: [DONE]\n\n"
 

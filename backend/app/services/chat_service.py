@@ -24,6 +24,8 @@ from app.prompts import (
     CHAT_USER_PROMPT_TEMPLATE,
     SUGGESTED_PROMPTS_SYSTEM_PROMPT,
     SUGGESTED_PROMPTS_USER_TEMPLATE,
+    FOLLOWUP_PROMPTS_SYSTEM_PROMPT,
+    FOLLOWUP_PROMPTS_USER_TEMPLATE,
 )
 
 
@@ -334,3 +336,104 @@ class ChatService:
                 break
 
         return result
+
+    def generate_followup_prompts(
+        self,
+        user_question: str,
+        assistant_answer: str,
+        model: str = AIModels.SEEK_MODEL
+    ) -> List[str]:
+        """
+        Generate 2 follow-up prompts based on the conversation.
+
+        Args:
+            user_question: The user's original question
+            assistant_answer: The AI's response
+
+        Returns:
+            List of 2 follow-up prompt strings
+        """
+        try:
+            # Truncate if too long
+            user_q = user_question[:200] if len(user_question) > 200 else user_question
+            assistant_a = assistant_answer[:500] if len(assistant_answer) > 500 else assistant_answer
+
+            user_prompt = FOLLOWUP_PROMPTS_USER_TEMPLATE.format(
+                user_question=user_q,
+                assistant_answer=assistant_a
+            )
+
+            messages = [
+                {"role": "system", "content": FOLLOWUP_PROMPTS_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt}
+            ]
+
+            response = self.provider.generate(
+                messages=messages,
+                model=model,
+                temperature=0.7,
+                max_tokens=150,
+                json_mode=True
+            )
+
+            content = response.content.strip()
+            print(f"[ChatService] Followup raw response: {content[:300]}")
+
+            # Handle markdown code blocks if present
+            if content.startswith("```"):
+                parts = content.split("```")
+                if len(parts) >= 2:
+                    content = parts[1]
+                    if content.startswith("json"):
+                        content = content[4:]
+                    content = content.strip()
+
+            # Try to extract JSON from response
+            # Sometimes the model returns text before/after JSON
+            import re
+            # Try array first, then object
+            json_match = re.search(r'\[.*\]', content, re.DOTALL)
+            if not json_match:
+                json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            if json_match:
+                content = json_match.group()
+
+            prompts = json.loads(content)
+            print(f"[ChatService] Parsed followups: {prompts}")
+
+            # Handle dict response - extract values if it's a dict
+            if isinstance(prompts, dict):
+                # Check if values are the actual questions (like {"Follow-up 1?": "question"})
+                values = list(prompts.values())
+                if all(isinstance(v, str) for v in values):
+                    # Values are strings, use them as prompts
+                    prompts = values
+                else:
+                    # Try to find a list in known keys
+                    for key in ['prompts', 'questions', 'followups', 'follow_ups']:
+                        if key in prompts and isinstance(prompts[key], list):
+                            prompts = prompts[key]
+                            break
+                    else:
+                        for v in prompts.values():
+                            if isinstance(v, list):
+                                prompts = v
+                                break
+
+            if isinstance(prompts, list) and len(prompts) >= 2:
+                result = prompts[:2]
+                print(f"[ChatService] Returning followups: {result}")
+                return result
+            elif isinstance(prompts, list) and len(prompts) == 1:
+                result = prompts + ["What's the key insight here?"]
+                print(f"[ChatService] Returning followups (padded): {result}")
+                return result
+
+            print(f"[ChatService] Unexpected followup format, using fallback")
+            return ["What else should I know?", "Can you explain further?"]
+
+        except Exception as e:
+            print(f"[ChatService] Error generating followup prompts: {e}")
+            import traceback
+            traceback.print_exc()
+            return ["What else should I know?", "Can you explain further?"]

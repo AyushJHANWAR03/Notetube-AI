@@ -19,6 +19,7 @@ interface UseStreamingChatReturn {
   isStreaming: boolean;
   isLoadingHistory: boolean;
   error: string | null;
+  followupPrompts: string[];
   sendMessage: (message: string) => Promise<void>;
   clearMessages: () => void;
 }
@@ -31,6 +32,7 @@ export function useStreamingChat({
   const [isStreaming, setIsStreaming] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [followupPrompts, setFollowupPrompts] = useState<string[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
   const hasLoadedHistory = useRef(false);
 
@@ -82,6 +84,7 @@ export function useStreamingChat({
     setMessages(prev => [...prev, userMessage]);
     setError(null);
     setIsStreaming(true);
+    setFollowupPrompts([]); // Clear previous follow-ups
 
     // Create abort controller for this request
     abortControllerRef.current = new AbortController();
@@ -142,6 +145,19 @@ export function useStreamingChat({
             if (data === '[DONE]') {
               // Stream complete
               break;
+            }
+            // Check for follow-up prompts
+            if (data.startsWith('[FOLLOWUPS]')) {
+              try {
+                const followupsJson = data.slice('[FOLLOWUPS]'.length);
+                const followups = JSON.parse(followupsJson);
+                if (Array.isArray(followups)) {
+                  setFollowupPrompts(followups);
+                }
+              } catch (e) {
+                console.error('Failed to parse followups:', e);
+              }
+              continue;
             }
             assistantContent += data;
             // Update the assistant message with accumulated content
@@ -210,6 +226,7 @@ export function useStreamingChat({
     isStreaming,
     isLoadingHistory,
     error,
+    followupPrompts,
     sendMessage,
     clearMessages,
   };
