@@ -82,6 +82,9 @@ export default function VideoDetailPage() {
   // Progress percentage from job
   const [progressPercent, setProgressPercent] = useState(0);
 
+  // Breakdown tab discovery tip - show once on first chapter click
+  const [showBreakdownTip, setShowBreakdownTip] = useState(false);
+
   const playerRef = useRef<YTPlayer | null>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
@@ -357,6 +360,23 @@ export default function VideoDetailPage() {
     setSeekQuery('');
     setSeekResult(null);
     setSeekError(null);
+  };
+
+  // Handle chapter click - show breakdown tip on first click
+  const handleChapterClick = (startTime: number) => {
+    seekToTime(startTime);
+
+    // Show breakdown tip on first chapter click (if not dismissed)
+    const dismissed = localStorage.getItem('breakdownTipDismissed');
+    if (!dismissed) {
+      setShowBreakdownTip(true);
+    }
+  };
+
+  // Dismiss breakdown tip and save to localStorage
+  const dismissBreakdownTip = () => {
+    localStorage.setItem('breakdownTipDismissed', 'true');
+    setShowBreakdownTip(false);
   };
 
   const toggleFlashcard = (index: number) => {
@@ -739,11 +759,42 @@ export default function VideoDetailPage() {
             {isReady && video.notes?.chapters && video.notes.chapters.length > 0 && (
               <div className="px-4 py-2 bg-gray-850 border-t border-gray-700">
                 <h3 className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Chapters</h3>
+
+                {/* Discovery Tip Toast - shown on first chapter click */}
+                {showBreakdownTip && (
+                  <div className="flex items-center justify-between bg-purple-900/30 border border-purple-700/50 rounded-lg px-3 py-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-yellow-400 text-sm">💡</span>
+                      <span className="text-sm text-purple-200">
+                        Want detailed summaries? Check the{' '}
+                        <button
+                          onClick={() => {
+                            setActiveTab('chapters');
+                            dismissBreakdownTip();
+                          }}
+                          className="underline font-medium hover:text-purple-100"
+                        >
+                          Breakdown
+                        </button>{' '}
+                        tab
+                      </span>
+                    </div>
+                    <button
+                      onClick={dismissBreakdownTip}
+                      className="text-gray-400 hover:text-white p-1 transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+
                 <div className="flex flex-wrap gap-1.5">
                   {video.notes.chapters.map((chapter, i) => (
                     <button
                       key={i}
-                      onClick={() => seekToTime(chapter.start_time)}
+                      onClick={() => handleChapterClick(chapter.start_time)}
                       className="flex items-center gap-1.5 px-2 py-1 rounded bg-gray-700/50 hover:bg-gray-700 transition-colors text-left group"
                     >
                       <span className="text-blue-400 font-mono text-xs">
