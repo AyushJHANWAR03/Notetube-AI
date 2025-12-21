@@ -3,6 +3,9 @@ Chat Service for AI-powered conversations about video content.
 
 Uses context from video notes (summary, chapters, topics) to answer questions.
 Supports streaming responses via SSE.
+
+Note: Streaming chat uses OpenAI directly for low latency.
+Suggested prompts use Groq (with OpenAI fallback) for speed.
 """
 import json
 from typing import List, Dict, Any, Optional, AsyncGenerator
@@ -10,6 +13,7 @@ from openai import OpenAI
 
 from app.core.config import settings
 from app.core.constants import AIModels
+from app.services.ai_provider import AIProvider
 from app.prompts import (
     CHAT_SYSTEM_PROMPT,
     CHAT_USER_PROMPT_TEMPLATE,
@@ -24,7 +28,11 @@ class ChatServiceError(Exception):
 
 
 class ChatService:
-    """Service for chat functionality with video context."""
+    """Service for chat functionality with video context.
+
+    Uses OpenAI for streaming chat (low latency requirement).
+    Uses Groq (with OpenAI fallback) for suggested prompts.
+    """
 
     # Limits
     MAX_CONTEXT_CHARS = 2000
@@ -40,13 +48,21 @@ class ChatService:
 
         self._api_key = api_key
         self._client = None
+        self._provider = None
 
     @property
     def client(self) -> OpenAI:
-        """Lazily initialize the OpenAI client to avoid fork() issues on macOS."""
+        """Lazily initialize the OpenAI client for streaming chat."""
         if self._client is None:
             self._client = OpenAI(api_key=self._api_key)
         return self._client
+
+    @property
+    def provider(self) -> AIProvider:
+        """Lazily initialize the AI provider for non-streaming calls."""
+        if self._provider is None:
+            self._provider = AIProvider()
+        return self._provider
 
     def build_context(self, notes) -> str:
         """
@@ -179,6 +195,8 @@ class ChatService:
         """
         Generate 3 suggested prompts based on video content.
 
+        Uses Groq (with OpenAI fallback) for fast generation.
+
         Args:
             summary: Video summary
             topics: List of video topics
@@ -208,17 +226,20 @@ class ChatService:
                 chapters=chapters_text or "No chapters available"
             )
 
-            response = self.client.chat.completions.create(
+            messages = [
+                {"role": "system", "content": SUGGESTED_PROMPTS_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt}
+            ]
+
+            response = self.provider.generate(
+                messages=messages,
                 model=model,
-                messages=[
-                    {"role": "system", "content": SUGGESTED_PROMPTS_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt}
-                ],
                 temperature=0.7,
-                max_tokens=300
+                max_tokens=300,
+                json_mode=True
             )
 
-            content = response.choices[0].message.content.strip()
+            content = response.content.strip()
 
             # Parse JSON response
             # Handle markdown code blocks if present

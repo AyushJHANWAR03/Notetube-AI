@@ -1,13 +1,15 @@
 """
 AI Notes Service for generating notes and chapters from video transcripts.
+
+Uses Groq as primary provider (fast) with OpenAI fallback (reliable).
 """
 from typing import Dict, Any, List, Optional, Tuple
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 import json
-from openai import OpenAI
 
 from app.core.config import settings
 from app.core.constants import TokenLimits, AIModels
+from app.services.ai_provider import AIProvider, AIProviderError
 from app.prompts import (
     CHAPTERS_SYSTEM_PROMPT,
     CHAPTERS_USER_PROMPT_TEMPLATE,
@@ -15,6 +17,13 @@ from app.prompts import (
     STRUCTURED_NOTES_USER_PROMPT_TEMPLATE,
     TRANSLITERATION_SYSTEM_PROMPT,
     TRANSLITERATION_USER_PROMPT_TEMPLATE,
+    CHUNK_TOPICS_SYSTEM_PROMPT,
+    CHUNK_TOPICS_USER_PROMPT_TEMPLATE,
+)
+from app.services.transcript_processor import (
+    chunk_transcript,
+    deduplicate_candidates,
+    apply_temporal_distribution,
 )
 
 
@@ -24,25 +33,21 @@ class AINotesServiceError(Exception):
 
 
 class AINotesService:
-    """Service for generating AI-powered notes and chapters from transcripts."""
+    """Service for generating AI-powered notes and chapters from transcripts.
 
-    def __init__(self, api_key: Optional[str] = None):
-        """Initialize the AI Notes service with lazy client initialization."""
-        if api_key is None:
-            api_key = settings.OPENAI_API_KEY
+    Uses Groq as primary AI provider for speed, with OpenAI as fallback.
+    """
 
-        if not api_key:
-            raise AINotesServiceError("OPENAI_API_KEY environment variable not set")
-
-        self._api_key = api_key
-        self._client = None  # Lazy initialization to avoid fork issues
+    def __init__(self):
+        """Initialize the AI Notes service with the unified AI provider."""
+        self._provider = None  # Lazy initialization to avoid fork issues
 
     @property
-    def client(self) -> OpenAI:
-        """Lazily initialize the OpenAI client to avoid fork() issues on macOS."""
-        if self._client is None:
-            self._client = OpenAI(api_key=self._api_key)
-        return self._client
+    def provider(self) -> AIProvider:
+        """Lazily initialize the AI provider to avoid fork() issues on macOS."""
+        if self._provider is None:
+            self._provider = AIProvider()
+        return self._provider
 
     def generate_chapters(
         self,
@@ -77,18 +82,20 @@ class AINotesService:
         )
 
         try:
-            response = self.client.chat.completions.create(
+            messages = [
+                {"role": "system", "content": CHAPTERS_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt}
+            ]
+
+            response = self.provider.generate(
+                messages=messages,
                 model=model,
-                messages=[
-                    {"role": "system", "content": CHAPTERS_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt}
-                ],
                 temperature=0.3,
-                max_tokens=2000
+                max_tokens=2000,
+                json_mode=True
             )
 
-            content = response.choices[0].message.content.strip()
-            chapters = self._parse_json_response(content)
+            chapters = self._parse_json_response(response.content)
 
             # Validate timestamps - filter out any that exceed video duration
             validated_chapters = []
@@ -106,12 +113,185 @@ class AINotesService:
 
             return {
                 "chapters": chapters,
-                "model_used": model,
-                "tokens_used": response.usage.total_tokens if response.usage else 0
+                "model_used": f"{response.provider.value}:{response.model}",
+                "tokens_used": response.tokens_used
             }
 
+        except AIProviderError as e:
+            raise AINotesServiceError(f"Failed to generate chapters: {str(e)}")
         except Exception as e:
             raise AINotesServiceError(f"Failed to generate chapters: {str(e)}")
+
+    def generate_chapters_chunked(
+        self,
+        segments: List[Dict[str, Any]],
+        video_duration: float,
+        requested_chapters: int = 10,
+        model: str = AIModels.CHAPTERS_MODEL
+    ) -> Dict[str, Any]:
+        """
+        Generate chapters using map-reduce over 5-minute chunks.
+
+        For long videos (>10 min), this approach:
+        1. Chunks transcript into 5-min windows with 45s overlap
+        2. Processes each chunk in parallel to find topic candidates
+        3. Deduplicates overlapping topics
+        4. Applies 60/40 temporal distribution for full video coverage
+
+        Args:
+            segments: List of transcript segments
+            video_duration: Video duration in seconds
+            requested_chapters: Target number of chapters
+            model: AI model to use
+
+        Returns:
+            Dictionary with chapters, model_used, tokens_used
+        """
+        if not segments:
+            raise AINotesServiceError("Segments cannot be empty")
+
+        print(f"  [Chunked] Starting map-reduce chapter generation...")
+        print(f"  [Chunked] Video duration: {int(video_duration)}s ({int(video_duration // 60)} min)")
+
+        # Step 1: Chunk the transcript
+        chunks = chunk_transcript(segments, video_duration)
+        print(f"  [Chunked] Created {len(chunks)} chunks (5-min with 45s overlap)")
+
+        # Step 2: Process chunks in parallel (MAP phase)
+        total_tokens = 0
+        all_candidates = []
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            chunk_args = [
+                (chunk, i, len(chunks), model)
+                for i, chunk in enumerate(chunks)
+            ]
+            results = list(executor.map(
+                lambda args: self._process_chunk_for_topics(*args),
+                chunk_args
+            ))
+
+        for candidates, tokens in results:
+            all_candidates.extend(candidates)
+            total_tokens += tokens
+
+        print(f"  [Chunked] MAP phase complete: {len(all_candidates)} candidates, {total_tokens} tokens")
+
+        # Step 3: Deduplicate overlapping candidates
+        unique_candidates = deduplicate_candidates(all_candidates, key="title")
+        print(f"  [Chunked] After deduplication: {len(unique_candidates)} unique topics")
+
+        # Step 4: Apply 60/40 temporal distribution (REDUCE phase)
+        final_topics = apply_temporal_distribution(
+            unique_candidates,
+            video_duration,
+            requested_topics=requested_chapters
+        )
+        print(f"  [Chunked] After 60/40 distribution: {len(final_topics)} final chapters")
+
+        # Step 5: Build final chapters
+        chapters = []
+
+        # Always start with Introduction at 0
+        if not final_topics or final_topics[0].get("start_time", 0) > 0:
+            chapters.append({
+                "title": "Introduction",
+                "start_time": 0,
+                "summary": "Video introduction and opening"
+            })
+
+        for topic in final_topics:
+            chapters.append({
+                "title": topic.get("title", "Topic"),
+                "start_time": topic.get("start_time", 0),
+                "summary": topic.get("summary", "")
+            })
+
+        # Sort by start_time and add end_times
+        chapters = sorted(chapters, key=lambda x: x["start_time"])
+
+        for i, chapter in enumerate(chapters):
+            if i < len(chapters) - 1:
+                chapter["end_time"] = chapters[i + 1]["start_time"]
+            else:
+                chapter["end_time"] = int(video_duration)
+
+        print(f"  [Chunked] ✓ Generated {len(chapters)} chapters")
+
+        return {
+            "chapters": chapters,
+            "model_used": f"chunked:{model}",
+            "tokens_used": total_tokens
+        }
+
+    def _process_chunk_for_topics(
+        self,
+        chunk: Dict[str, Any],
+        chunk_index: int,
+        total_chunks: int,
+        model: str
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """
+        Process a single chunk to find topic candidates.
+
+        Returns up to 2 topics per chunk.
+        """
+        segments = chunk.get("segments", [])
+        if not segments:
+            return [], 0
+
+        # Build timestamped transcript for this chunk
+        timestamped_lines = []
+        for seg in segments:
+            start_seconds = int(seg.get('start', 0))
+            timestamped_lines.append(f"[{start_seconds}] {seg.get('text', '')}")
+
+        transcript_text = "\n".join(timestamped_lines)
+
+        user_prompt = CHUNK_TOPICS_USER_PROMPT_TEMPLATE.format(
+            chunk_index=chunk_index + 1,
+            total_chunks=total_chunks,
+            start_time=int(chunk.get("start_time", 0)),
+            end_time=int(chunk.get("end_time", 0)),
+            transcript=transcript_text
+        )
+
+        try:
+            messages = [
+                {"role": "system", "content": CHUNK_TOPICS_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt}
+            ]
+
+            response = self.provider.generate(
+                messages=messages,
+                model=model,
+                temperature=0.3,
+                max_tokens=500,
+                json_mode=True
+            )
+
+            parsed = self._parse_json_response(response.content)
+
+            # Handle both array and object responses
+            if isinstance(parsed, dict):
+                # AI might return {"topics": [...]} instead of just [...]
+                topics = parsed.get("topics", []) or list(parsed.values())[0] if parsed else []
+            elif isinstance(parsed, list):
+                topics = parsed
+            else:
+                topics = []
+
+            # Validate and limit to 2 topics per chunk
+            valid_topics = []
+            for topic in topics[:2]:
+                if isinstance(topic, dict) and "title" in topic and "start_time" in topic:
+                    valid_topics.append(topic)
+
+            return valid_topics, response.tokens_used
+
+        except Exception as e:
+            print(f"  [Chunked] Chunk {chunk_index + 1} failed: {e}")
+            return [], 0
 
     def _parse_json_response(self, content: str) -> list:
         """Parse JSON from AI response, handling markdown code blocks."""
@@ -179,17 +359,20 @@ class AINotesService:
         )
 
         try:
-            response = self.client.chat.completions.create(
+            messages = [
+                {"role": "system", "content": STRUCTURED_NOTES_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt}
+            ]
+
+            response = self.provider.generate(
+                messages=messages,
                 model=model,
-                messages=[
-                    {"role": "system", "content": STRUCTURED_NOTES_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt}
-                ],
                 temperature=0.5,
-                max_tokens=3000
+                max_tokens=3000,
+                json_mode=True
             )
 
-            content = response.choices[0].message.content.strip()
+            content = response.content.strip()
 
             # Parse JSON response
             try:
@@ -212,8 +395,8 @@ class AINotesService:
                 "action_items": result.get("action_items", []),
                 "topics": result.get("topics", []),
                 "difficulty_level": result.get("difficulty_level", "intermediate"),
-                "model_used": model,
-                "tokens_used": response.usage.total_tokens if hasattr(response, 'usage') else 0
+                "model_used": f"{response.provider.value}:{response.model}",
+                "tokens_used": response.tokens_used
             }
 
             # Validate difficulty_level
@@ -222,6 +405,8 @@ class AINotesService:
 
             return validated_result
 
+        except AIProviderError as e:
+            raise AINotesServiceError(f"Failed to generate structured notes: {str(e)}")
         except AINotesServiceError:
             raise
         except Exception as e:
@@ -290,18 +475,20 @@ class AINotesService:
         )
 
         try:
-            response = self.client.chat.completions.create(
+            messages = [
+                {"role": "system", "content": TRANSLITERATION_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt}
+            ]
+
+            response = self.provider.generate(
+                messages=messages,
                 model=model,
-                messages=[
-                    {"role": "system", "content": TRANSLITERATION_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt}
-                ],
                 temperature=0.2,
                 max_tokens=4000
             )
 
-            content = response.choices[0].message.content.strip()
-            tokens = response.usage.total_tokens if response.usage else 0
+            content = response.content.strip()
+            tokens = response.tokens_used
             converted_lines = {
                 line.split('.', 1)[0].strip(): line.split('.', 1)[1].strip()
                 for line in content.split('\n')

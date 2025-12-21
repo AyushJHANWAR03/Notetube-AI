@@ -23,6 +23,7 @@ from app.core.config import settings
 from app.services.youtube_service import YouTubeService, YouTubeServiceError
 from app.services.ai_notes_service import AINotesService, AINotesServiceError
 from app.services.chat_service import ChatService, ChatServiceError
+from app.services.transcript_processor import TranscriptProcessor
 from app.models.video import Video
 from app.models.transcript import Transcript
 from app.models.notes import Notes
@@ -202,6 +203,17 @@ def _process_video_sync(
             transcript = video_data["transcript"]["raw_text"]
             segments = video_data["transcript"]["segments"]
             language_code = video_data["transcript"]["language_code"]
+
+            # Merge segments into sentences for better AI comprehension
+            print(f"[STEP 4.1/7] Merging segments into sentences...")
+            print(f"  - Original segments: {len(segments)}")
+            transcript_processor = TranscriptProcessor()
+            merged_segments = transcript_processor.merge_sentences(segments)
+            print(f"  - Merged segments: {len(merged_segments)}")
+            print(f"[STEP 4.1/7] ✓ Segments merged into sentences")
+
+            # Use merged segments for AI processing
+            segments = merged_segments
 
             # Transliterate non-English transcripts to English
             transliteration_tokens = 0
@@ -428,12 +440,21 @@ def _generate_ai_content_parallel(
     ai_service = AINotesService()
 
     def generate_chapters():
-        print(f"  [AI] Starting chapters generation...")
-        result = ai_service.generate_chapters(
-            transcript,
-            segments,
-            video_duration=video_duration
-        )
+        # Use chunked generation for long videos (>10 min) for better coverage
+        if video_duration > 600:
+            print(f"  [AI] Starting CHUNKED chapters generation (video > 10 min)...")
+            result = ai_service.generate_chapters_chunked(
+                segments,
+                video_duration=video_duration,
+                requested_chapters=10
+            )
+        else:
+            print(f"  [AI] Starting chapters generation (short video)...")
+            result = ai_service.generate_chapters(
+                transcript,
+                segments,
+                video_duration=video_duration
+            )
         print(f"  [AI] ✓ Chapters done ({len(result['chapters'])} chapters, {result['tokens_used']} tokens)")
         return result
 
@@ -448,7 +469,7 @@ def _generate_ai_content_parallel(
         return result
 
     # Run 2 AI tasks in parallel
-    print(f"  [AI] Launching 2 parallel OpenAI requests...")
+    print(f"  [AI] Launching 2 parallel AI requests (Groq primary, OpenAI fallback)...")
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = {
             executor.submit(generate_chapters): "chapters",

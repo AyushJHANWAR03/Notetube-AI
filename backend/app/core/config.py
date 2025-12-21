@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # OpenAI
     OPENAI_API_KEY: str
 
+    # Groq (primary AI provider - fast inference)
+    GROQ_API_KEY: str | None = None
+
     # Firebase (for PDF storage)
     FIREBASE_PROJECT_ID: str | None = None
     FIREBASE_STORAGE_BUCKET: str | None = None
