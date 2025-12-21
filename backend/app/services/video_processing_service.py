@@ -550,10 +550,12 @@ class VideoProcessingService:
         db: AsyncSession
     ) -> Optional[Video]:
         """
-        Find any READY video with this youtube_video_id (from any user).
+        Find the best READY video with this youtube_video_id (from any user).
 
         Used for global caching - if video was already processed by any user,
         we can clone it instead of processing again.
+
+        Prioritizes videos with complete Notes data (including suggested_prompts).
 
         Args:
             youtube_video_id: YouTube video ID
@@ -562,6 +564,22 @@ class VideoProcessingService:
         Returns:
             Video object with status=READY or None if not found
         """
+        # First, try to find a video with complete notes (has suggested_prompts)
+        result = await db.execute(
+            select(Video)
+            .join(Notes, Video.id == Notes.video_id)
+            .where(Video.youtube_video_id == youtube_video_id)
+            .where(Video.status == self.STATUS_READY)
+            .where(Notes.suggested_prompts.isnot(None))
+            .where(Notes.suggested_prompts != [])
+            .limit(1)
+        )
+        video = result.scalar_one_or_none()
+
+        if video:
+            return video
+
+        # Fallback: find any READY video (even without suggested_prompts)
         result = await db.execute(
             select(Video)
             .where(Video.youtube_video_id == youtube_video_id)
