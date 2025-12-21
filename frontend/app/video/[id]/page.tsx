@@ -9,6 +9,7 @@ import Link from 'next/link';
 import TranscriptPanel from '@/components/video/TranscriptPanel';
 import ChatPanel from '@/components/video/ChatPanel';
 import NotesPanel from '@/components/video/NotesPanel';
+import ProcessingPanel from '@/components/video/ProcessingPanel';
 
 type TabType = 'transcript' | 'chat' | 'notes' | 'chapters' | 'flashcards';
 
@@ -45,15 +46,6 @@ interface YTPlayer {
   destroy: () => void;
 }
 
-// Processing steps for animation
-const processingSteps = [
-  { id: 'fetch', label: 'Fetching video data' },
-  { id: 'transcript', label: 'Extracting transcript' },
-  { id: 'notes', label: 'Generating AI insights' },
-  { id: 'chapters', label: 'Creating chapters' },
-  { id: 'flashcards', label: 'Building flashcards' },
-];
-
 export default function VideoDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -83,6 +75,12 @@ export default function VideoDetailPage() {
   const [isSeekSearching, setIsSeekSearching] = useState(false);
   const [seekResult, setSeekResult] = useState<SeekResponse | null>(null);
   const [seekError, setSeekError] = useState<string | null>(null);
+
+  // Celebration state - show briefly when processing completes
+  const [showCelebration, setShowCelebration] = useState(false);
+
+  // Progress percentage from job
+  const [progressPercent, setProgressPercent] = useState(0);
 
   const playerRef = useRef<YTPlayer | null>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
@@ -152,18 +150,30 @@ export default function VideoDetailPage() {
             console.log('[Polling] Job status:', latestJob.status, 'Progress:', latestJob.progress);
             const newStep = getStepFromJobStatus(latestJob.status);
             setCurrentStep(newStep);
+            // Update progress percentage from job
+            if (latestJob.progress !== undefined) {
+              setProgressPercent(latestJob.progress);
+            }
           }
 
-          // If status changed to READY, fetch full video with notes
+          // If status changed to READY, show celebration then fetch full video
           if (videoData.status === 'READY') {
-            console.log('[Polling] Video is READY, fetching full details...');
-            const fullVideo = await videoApi.getVideo(params.id as string);
-            setVideo(fullVideo);
+            console.log('[Polling] Video is READY, showing celebration...');
             setCurrentStep(4); // Mark all steps complete
+            setShowCelebration(true);
+
+            // Clear polling immediately
             if (pollingRef.current) {
               clearInterval(pollingRef.current);
               pollingRef.current = null;
             }
+
+            // After celebration, fetch full video and hide celebration
+            setTimeout(async () => {
+              const fullVideo = await videoApi.getVideo(params.id as string);
+              setVideo(fullVideo);
+              setShowCelebration(false);
+            }, 1200);
           } else if (videoData.status === 'FAILED') {
             console.log('[Polling] Video FAILED');
             setVideo(prev => prev ? { ...prev, status: 'FAILED', failure_reason: videoData.failure_reason } : null);
@@ -396,79 +406,7 @@ export default function VideoDetailPage() {
   const isReady = video.status === 'READY' && video.notes;
   const isFailed = video.status === 'FAILED';
 
-  // Render Processing State
-  const renderProcessingState = () => (
-    <div className="lg:w-[40%] xl:w-[38%] lg:border-l border-gray-700 bg-gray-800 lg:h-screen flex flex-col items-center justify-center p-8">
-      {/* Animated Processing Indicator */}
-      <div className="relative mb-8">
-        <div className="w-24 h-24 rounded-full border-4 border-gray-700 border-t-blue-500 animate-spin"></div>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-        </div>
-      </div>
-
-      {/* Status Text */}
-      <h3 className="text-xl font-semibold text-white mb-2">
-        Analyzing Video
-      </h3>
-      <p className="text-gray-400 text-center mb-8">
-        {processingSteps[currentStep].label}...
-      </p>
-
-      {/* Progress Steps */}
-      <div className="w-full max-w-xs space-y-3">
-        {processingSteps.map((step, index) => (
-          <div
-            key={step.id}
-            className={`flex items-center gap-3 p-3 rounded-lg transition-all ${
-              index === currentStep
-                ? 'bg-blue-900/30 border border-blue-700'
-                : index < currentStep
-                ? 'bg-green-900/20 border border-green-800'
-                : 'bg-gray-700/30 border border-gray-700'
-            }`}
-          >
-            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
-              index < currentStep
-                ? 'bg-green-500 text-white'
-                : index === currentStep
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-600 text-gray-400'
-            }`}>
-              {index < currentStep ? (
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                </svg>
-              ) : index + 1}
-            </span>
-            <span className={`text-sm flex-1 ${
-              index === currentStep
-                ? 'text-blue-300'
-                : index < currentStep
-                ? 'text-green-400'
-                : 'text-gray-500'
-            }`}>
-              {step.label}
-            </span>
-            {index === currentStep && (
-              <span className="ml-auto">
-                <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
-              </span>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Estimated Time */}
-      <p className="text-gray-500 text-sm mt-6">
-        Usually takes 10-20 seconds
-      </p>
-    </div>
-  );
-
-  // Render Failed State - friendly "Oops" message for no captions
+// Render Failed State - friendly "Oops" message for no captions
   const renderFailedState = () => {
     const isNoCaptions = video.failure_reason?.toLowerCase().includes('caption') ||
                          video.failure_reason?.toLowerCase().includes('subtitle');
@@ -823,7 +761,14 @@ export default function VideoDetailPage() {
           </div>
 
           {/* Right Side - Processing Animation or Notes */}
-          {isProcessing && renderProcessingState()}
+          {(isProcessing || showCelebration) && (
+            <ProcessingPanel
+              currentStep={currentStep}
+              totalSteps={5}
+              showCelebration={showCelebration}
+              progressPercent={progressPercent}
+            />
+          )}
           {isFailed && renderFailedState()}
           {isReady && renderNotesContent()}
         </div>
