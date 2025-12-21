@@ -10,7 +10,7 @@ import TranscriptPanel from '@/components/video/TranscriptPanel';
 import ChatPanel from '@/components/video/ChatPanel';
 import NotesPanel from '@/components/video/NotesPanel';
 
-type TabType = 'summary' | 'transcript' | 'chat' | 'notes' | 'chapters' | 'flashcards';
+type TabType = 'transcript' | 'chat' | 'notes' | 'chapters' | 'flashcards';
 
 // YouTube Player API types
 declare global {
@@ -62,7 +62,8 @@ export default function VideoDetailPage() {
   const [video, setVideo] = useState<VideoDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<TabType>('summary');
+  const [activeTab, setActiveTab] = useState<TabType>('transcript');
+  const [showSummaryPopup, setShowSummaryPopup] = useState(false);
   const [flippedCards, setFlippedCards] = useState<Set<number>>(new Set());
   const [playerReady, setPlayerReady] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
@@ -493,7 +494,6 @@ export default function VideoDetailPage() {
     const { notes } = video;
 
     const tabs: { id: TabType; label: string; count?: number }[] = [
-      { id: 'summary', label: 'Summary' },
       { id: 'transcript', label: 'Transcript' },
       { id: 'chat', label: 'Chat' },
       { id: 'notes', label: 'Notes', count: userNotes.length > 0 ? userNotes.length : undefined },
@@ -529,60 +529,6 @@ export default function VideoDetailPage() {
 
         {/* Tab Content */}
         <div className={`flex-1 min-h-0 ${activeTab === 'chat' ? '' : 'overflow-y-auto p-4'}`}>
-          {/* Summary Tab */}
-          {activeTab === 'summary' && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-sm font-semibold text-gray-400 mb-2 uppercase tracking-wide">Summary</h3>
-                <p className="text-sm text-gray-200 leading-relaxed">{notes.summary}</p>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-semibold text-gray-400 mb-2 uppercase tracking-wide">Key Points</h3>
-                <ul className="space-y-2">
-                  {notes.bullets.map((bullet, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <span className="text-blue-400 mt-1">•</span>
-                      <span className="text-sm text-gray-300">{bullet}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {notes.action_items && notes.action_items.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-400 mb-2 uppercase tracking-wide">Action Items</h3>
-                  <ul className="space-y-2">
-                    {notes.action_items.map((item, i) => (
-                      <li key={i} className="flex items-start gap-2">
-                        <span className="text-green-400">✓</span>
-                        <span className="text-sm text-gray-300">{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {notes.key_timestamps && notes.key_timestamps.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-400 mb-2 uppercase tracking-wide">Key Moments</h3>
-                  <div className="space-y-1">
-                    {notes.key_timestamps.map((ts, i) => (
-                      <button
-                        key={i}
-                        onClick={() => seekToTime(ts.seconds)}
-                        className="flex items-center gap-3 w-full p-2 hover:bg-gray-700 rounded transition-colors text-left"
-                      >
-                        <span className="text-blue-400 font-mono text-sm">{ts.time}</span>
-                        <span className="text-gray-300 text-sm">{ts.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Notes Tab - User saved notes */}
           {activeTab === 'notes' && (
             <NotesPanel
@@ -679,6 +625,101 @@ export default function VideoDetailPage() {
             />
           )}
         </div>
+
+        {/* Floating Summary Button - shown when on transcript tab */}
+        {activeTab === 'transcript' && (
+          <div className="flex-shrink-0 border-t border-gray-700 p-3 bg-gray-800">
+            <button
+              onClick={() => setShowSummaryPopup(true)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-medium rounded-lg transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              View Summary
+            </button>
+          </div>
+        )}
+
+        {/* Summary Popup Modal */}
+        {showSummaryPopup && (
+          <>
+            {/* Backdrop */}
+            <div
+              className="fixed inset-0 bg-black/60 z-50"
+              onClick={() => setShowSummaryPopup(false)}
+            />
+            {/* Modal */}
+            <div className="fixed inset-x-4 top-1/2 -translate-y-1/2 lg:inset-x-auto lg:left-1/2 lg:-translate-x-1/2 lg:w-[600px] max-h-[80vh] bg-gray-800 rounded-xl shadow-2xl z-50 flex flex-col overflow-hidden border border-gray-700">
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700 flex-shrink-0">
+                <h3 className="text-lg font-semibold text-white">Summary</h3>
+                <button
+                  onClick={() => setShowSummaryPopup(false)}
+                  className="p-1 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-gray-700"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              {/* Content - Scrollable */}
+              <div className="flex-1 overflow-y-auto p-5 space-y-5">
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-400 mb-2 uppercase tracking-wide">Overview</h4>
+                  <p className="text-sm text-gray-200 leading-relaxed">{notes.summary}</p>
+                </div>
+
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-400 mb-2 uppercase tracking-wide">Key Points</h4>
+                  <ul className="space-y-2">
+                    {notes.bullets.map((bullet, i) => (
+                      <li key={i} className="flex gap-2">
+                        <span className="text-purple-400 text-sm leading-relaxed">•</span>
+                        <span className="text-sm text-gray-300 leading-relaxed">{bullet}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {notes.action_items && notes.action_items.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-400 mb-2 uppercase tracking-wide">Action Items</h4>
+                    <ul className="space-y-2">
+                      {notes.action_items.map((item, i) => (
+                        <li key={i} className="flex gap-2">
+                          <span className="text-green-400 text-sm leading-relaxed">✓</span>
+                          <span className="text-sm text-gray-300 leading-relaxed">{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {notes.key_timestamps && notes.key_timestamps.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-400 mb-2 uppercase tracking-wide">Key Moments</h4>
+                    <div className="space-y-1">
+                      {notes.key_timestamps.map((ts, i) => (
+                        <button
+                          key={i}
+                          onClick={() => {
+                            seekToTime(ts.seconds);
+                            setShowSummaryPopup(false);
+                          }}
+                          className="flex items-center gap-3 w-full p-2 hover:bg-gray-700 rounded transition-colors text-left"
+                        >
+                          <span className="text-purple-400 font-mono text-sm">{ts.time}</span>
+                          <span className="text-gray-300 text-sm">{ts.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </div>
     );
   };
