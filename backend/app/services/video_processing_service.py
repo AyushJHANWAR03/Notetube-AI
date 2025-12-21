@@ -543,3 +543,122 @@ class VideoProcessingService:
         if user:
             user.videos_analyzed += 1
             await db.commit()
+
+    async def find_ready_video_globally(
+        self,
+        youtube_video_id: str,
+        db: AsyncSession
+    ) -> Optional[Video]:
+        """
+        Find the best READY video with this youtube_video_id (from any user).
+
+        Used for global caching - if video was already processed by any user,
+        we can clone it instead of processing again.
+
+        Prioritizes videos with complete Notes data (including suggested_prompts).
+
+        Args:
+            youtube_video_id: YouTube video ID
+            db: Database session
+
+        Returns:
+            Video object with status=READY or None if not found
+        """
+        # First, try to find a video with complete notes (has suggested_prompts)
+        result = await db.execute(
+            select(Video)
+            .join(Notes, Video.id == Notes.video_id)
+            .where(Video.youtube_video_id == youtube_video_id)
+            .where(Video.status == self.STATUS_READY)
+            .where(Notes.suggested_prompts.isnot(None))
+            .where(Notes.suggested_prompts != [])
+            .limit(1)
+        )
+        video = result.scalar_one_or_none()
+
+        if video:
+            return video
+
+        # Fallback: find any READY video (even without suggested_prompts)
+        result = await db.execute(
+            select(Video)
+            .where(Video.youtube_video_id == youtube_video_id)
+            .where(Video.status == self.STATUS_READY)
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def clone_video_for_user(
+        self,
+        source_video: Video,
+        user_id: UUID,
+        original_url: str,
+        db: AsyncSession
+    ) -> Video:
+        """
+        Clone an existing READY video to a new user's library.
+
+        Copies: Video metadata, Transcript, Notes
+        Does NOT: Create a job, count towards quota
+
+        Args:
+            source_video: The source Video to clone from
+            user_id: The target user's UUID
+            original_url: The URL the user submitted
+            db: Database session
+
+        Returns:
+            Newly created Video object for the user (already READY)
+        """
+        # 1. Create new Video record for this user
+        new_video = Video(
+            user_id=user_id,
+            youtube_video_id=source_video.youtube_video_id,
+            original_url=original_url,
+            title=source_video.title,
+            thumbnail_url=source_video.thumbnail_url,
+            duration_seconds=source_video.duration_seconds,
+            status=self.STATUS_READY,  # Already processed!
+            processed_at=datetime.utcnow(),
+        )
+        db.add(new_video)
+        await db.flush()  # Get the new_video.id without committing yet
+
+        # 2. Clone Transcript
+        source_transcript = await self.get_transcript_by_video_id(source_video.id, db)
+        if source_transcript:
+            new_transcript = Transcript(
+                video_id=new_video.id,
+                language_code=source_transcript.language_code,
+                provider=source_transcript.provider,
+                raw_text=source_transcript.raw_text,
+                segments=source_transcript.segments,
+            )
+            db.add(new_transcript)
+
+        # 3. Clone Notes
+        source_notes = await self.get_notes_by_video_id(source_video.id, db)
+        if source_notes:
+            new_notes = Notes(
+                video_id=new_video.id,
+                summary=source_notes.summary,
+                bullets=source_notes.bullets,
+                key_timestamps=source_notes.key_timestamps,
+                flashcards=source_notes.flashcards,
+                action_items=source_notes.action_items,
+                topics=source_notes.topics,
+                difficulty_level=source_notes.difficulty_level,
+                markdown_notes=source_notes.markdown_notes,
+                chapters=source_notes.chapters,
+                suggested_prompts=source_notes.suggested_prompts,
+                # Don't copy token counts or raw output - those were for the original
+                notes_model=source_notes.notes_model,
+                notes_tokens=0,
+                chapters_tokens=0,
+                was_truncated=source_notes.was_truncated,
+            )
+            db.add(new_notes)
+
+        await db.commit()
+        await db.refresh(new_video)
+        return new_video
