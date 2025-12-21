@@ -171,6 +171,37 @@ class VideoProcessingService:
         result = await db.execute(query)
         return list(result.scalars().all())
 
+    async def count_user_videos(
+        self,
+        user_id: UUID,
+        db: AsyncSession,
+        status: Optional[str] = None,
+        exclude_failed: bool = True
+    ) -> int:
+        """
+        Count total videos for a user.
+
+        Args:
+            user_id: User's UUID
+            db: Database session
+            status: Filter by status (optional)
+            exclude_failed: Whether to exclude failed videos (default True)
+
+        Returns:
+            Total count of videos
+        """
+        from sqlalchemy import func
+
+        query = select(func.count(Video.id)).where(Video.user_id == user_id)
+
+        if status:
+            query = query.where(Video.status == status)
+        elif exclude_failed:
+            query = query.where(Video.status != self.STATUS_FAILED)
+
+        result = await db.execute(query)
+        return result.scalar() or 0
+
     async def update_video_status(
         self,
         video_id: UUID,

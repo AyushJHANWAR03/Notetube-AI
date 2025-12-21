@@ -114,13 +114,23 @@ class AINotesService:
                 json_mode=True
             )
 
-            chapters = self._parse_json_response(response.content)
+            parsed = self._parse_json_response(response.content)
+
+            # Handle response formats - AI might return {"chapters": [...]} or just [...]
+            if isinstance(parsed, dict):
+                chapters = parsed.get("chapters", []) or list(parsed.values())[0] if parsed else []
+            elif isinstance(parsed, list):
+                chapters = parsed
+            else:
+                chapters = []
 
             # Validate timestamps - filter out any that exceed video duration
+            # Also ensure each chapter is a dict with required fields
             validated_chapters = []
             for chapter in chapters:
-                if chapter.get("start_time", 0) < video_duration:
-                    validated_chapters.append(chapter)
+                if isinstance(chapter, dict) and "start_time" in chapter:
+                    if chapter.get("start_time", 0) < video_duration:
+                        validated_chapters.append(chapter)
             chapters = validated_chapters if validated_chapters else [{"title": "Introduction", "start_time": 0, "summary": "Video content"}]
 
             # Add end_time to each chapter
@@ -137,9 +147,11 @@ class AINotesService:
             }
 
         except AIProviderError as e:
-            raise AINotesServiceError(f"Failed to generate chapters: {str(e)}")
+            raise AINotesServiceError(f"AI provider error in chapters: {str(e)}")
+        except AINotesServiceError:
+            raise
         except Exception as e:
-            raise AINotesServiceError(f"Failed to generate chapters: {str(e)}")
+            raise AINotesServiceError(f"Chapter generation error: {str(e)}")
 
     def generate_chapters_chunked(
         self,

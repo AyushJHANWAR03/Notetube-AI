@@ -148,9 +148,16 @@ async def list_videos(
         status=status_filter
     )
 
+    # Get actual total count (not just returned count)
+    total_count = await video_service.count_user_videos(
+        current_user.id,
+        db,
+        status=status_filter
+    )
+
     return VideoListResponse(
         videos=[VideoListItem.model_validate(v) for v in videos],
-        total=len(videos)
+        total=total_count
     )
 
 
