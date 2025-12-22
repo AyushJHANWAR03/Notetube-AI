@@ -4,10 +4,12 @@ Video API routes for processing YouTube videos.
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.config import settings
 from app.schemas.video import (
     VideoCreateRequest,
     VideoCreateResponse,
@@ -25,7 +27,8 @@ from app.schemas.user import User
 from app.services.video_processing_service import VideoProcessingService
 from app.services.youtube_service import YouTubeService, YouTubeServiceError
 from app.services.seek_service import SeekService, SeekServiceError
-from app.api.dependencies.auth import get_current_user
+from app.services.guest_service import guest_service
+from app.api.dependencies.auth import get_current_user, get_current_user_optional
 from app.workers.video_processor import enqueue_video_processing
 
 
@@ -125,6 +128,132 @@ async def create_video(
     )
 
 
+@router.post("/guest", response_model=VideoCreateResponse)
+async def create_video_guest(
+    video_request: VideoCreateRequest,
+    request: Request,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Submit a YouTube video for processing (guest access).
+
+    Allows anonymous users to process 1 video for free.
+    If user is authenticated, redirects to normal flow.
+    If video is cached, returns instantly without consuming quota.
+
+    Returns:
+        - Video info and job ID if successful
+        - 401 with requires_auth=true if guest limit reached
+    """
+    # If user is authenticated, use normal flow
+    if current_user:
+        return await create_video(video_request, current_user, db)
+
+    video_service = VideoProcessingService()
+    youtube_service = YouTubeService()
+
+    # Extract YouTube video ID first
+    try:
+        youtube_video_id = youtube_service.extract_video_id(video_request.url)
+    except YouTubeServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+    # Check guest access state
+    access_state = await guest_service.get_guest_access_state(
+        db, request, youtube_video_id
+    )
+
+    # If video is cached, allow access
+    if access_state["is_cached"]:
+        cached_video = await video_service.find_ready_video_globally(
+            youtube_video_id, db
+        )
+        if cached_video:
+            response = JSONResponse(
+                content={
+                    "video": VideoListItem.model_validate(cached_video).model_dump(mode="json"),
+                    "job_id": "",
+                    "message": "Video loaded from cache!",
+                    "is_guest": True,
+                    "guest_token": access_state["guest_token"]
+                }
+            )
+            # Set guest token cookie
+            response.set_cookie(
+                key=guest_service.GUEST_TOKEN_COOKIE,
+                value=access_state["guest_token"],
+                max_age=60 * 60 * 24 * 365,
+                httponly=True,
+                samesite="lax",
+                secure=settings.ENVIRONMENT == "production"
+            )
+            return response
+
+    # Check if guest can generate new video
+    if not access_state["can_generate"]:
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={
+                "detail": "GUEST_LIMIT_REACHED",
+                "requires_auth": True,
+                "message": "Sign in to continue analyzing videos"
+            }
+        )
+
+    # Guest can process - create video with null user_id
+    video = await video_service.create_video(
+        user_id=None,  # Guest video - no user
+        youtube_video_id=youtube_video_id,
+        original_url=video_request.url,
+        db=db
+    )
+
+    # Record guest usage BEFORE processing (to prevent race conditions)
+    guest_token = access_state["guest_token"]
+    ip_hash = guest_service.hash_ip(guest_service.get_client_ip(request))
+
+    await guest_service.record_guest_usage(
+        db=db,
+        guest_token=guest_token,
+        ip_hash=ip_hash,
+        video_id=video.id,
+        youtube_id=youtube_video_id
+    )
+
+    # Enqueue background processing (null user_id for guest)
+    job_id = enqueue_video_processing(
+        video.id,
+        None,  # No user ID for guest
+        video_request.url
+    )
+
+    response = JSONResponse(
+        content={
+            "video": VideoListItem.model_validate(video).model_dump(mode="json"),
+            "job_id": job_id,
+            "message": "Video submitted for processing",
+            "is_guest": True,
+            "guest_token": guest_token
+        }
+    )
+
+    # Set guest token cookie
+    response.set_cookie(
+        key=guest_service.GUEST_TOKEN_COOKIE,
+        value=guest_token,
+        max_age=60 * 60 * 24 * 365,
+        httponly=True,
+        samesite="lax",
+        secure=settings.ENVIRONMENT == "production"
+    )
+
+    return response
+
+
 @router.get("", response_model=VideoListResponse)
 async def list_videos(
     current_user: User = Depends(get_current_user),
@@ -164,11 +293,14 @@ async def list_videos(
 @router.get("/{video_id}", response_model=VideoDetailResponse)
 async def get_video(
     video_id: UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db)
 ) -> VideoDetailResponse:
     """
     Get detailed video information including notes and transcript.
+
+    For authenticated users: requires ownership.
+    For guests: allows access to guest videos (user_id is NULL).
     """
     video_service = VideoProcessingService()
 
@@ -184,8 +316,25 @@ async def get_video(
             detail="Video not found"
         )
 
-    # Verify ownership
-    if video.user_id != current_user.id:
+    # Check access permissions
+    # Guest videos (user_id=None) are accessible by anyone
+    # READY videos are accessible by anyone (cached videos can be viewed by all)
+    # Non-READY videos require ownership
+    if video.user_id is None:
+        # Guest video - allow access (anyone with the ID can view)
+        pass
+    elif video.status == "READY":
+        # Cached/ready videos are accessible by anyone (read-only)
+        # This supports the cache-first experience for both guests and signed-in users
+        pass
+    elif current_user is None:
+        # Non-ready video and no authentication
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required"
+        )
+    elif video.user_id != current_user.id:
+        # Non-ready video and user doesn't own it
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to access this video"
@@ -236,13 +385,14 @@ async def get_video(
 @router.get("/{video_id}/status", response_model=VideoStatusResponse)
 async def get_video_status(
     video_id: UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db)
 ) -> VideoStatusResponse:
     """
     Get video processing status and job information.
 
     Use this endpoint to poll for processing completion.
+    Allows guest access for guest videos.
     """
     video_service = VideoProcessingService()
 
@@ -258,8 +408,23 @@ async def get_video_status(
             detail="Video not found"
         )
 
-    # Verify ownership
-    if video.user_id != current_user.id:
+    # Check access permissions (same logic as get_video)
+    # Anyone with the video ID can check status - this is needed for:
+    # 1. Guest videos (user_id=None)
+    # 2. Processing status polling for any video
+    # 3. Cached videos accessible to all
+    # Only restrict if: non-ready, not owner, and authenticated
+    if video.user_id is None:
+        # Guest video - allow access
+        pass
+    elif video.status == "READY":
+        # Cached/ready videos - status accessible by anyone
+        pass
+    elif current_user is None:
+        # Non-ready video, no auth - allow status check for guest flow
+        pass
+    elif video.user_id != current_user.id:
+        # Non-ready video, authenticated user who doesn't own it
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to access this video"

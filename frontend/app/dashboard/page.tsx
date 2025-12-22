@@ -23,7 +23,6 @@ export default function Dashboard() {
   const router = useRouter();
   const [showSignInModal, setShowSignInModal] = useState(false);
   const [showLimitModal, setShowLimitModal] = useState(false);
-  const [pendingUrl, setPendingUrl] = useState<string | null>(null);
   const [quota, setQuota] = useState<QuotaInfo | null>(null);
   const [recentVideos, setRecentVideos] = useState<Video[]>([]);
   const [allVideos, setAllVideos] = useState<Video[]>([]);
@@ -86,18 +85,22 @@ export default function Dashboard() {
     router.push(`/video/${videoId}`);
   };
 
-  const handleGenerateNotesAttempt = (url: string) => {
-    if (!user) {
-      setPendingUrl(url);
-      setShowSignInModal(true);
-      return false;
+  const handleGenerateNotesAttempt = () => {
+    // For authenticated users, check quota
+    if (user) {
+      if (quota && quota.remaining <= 0) {
+        setShowLimitModal(true);
+        return false;
+      }
+      return true;
     }
-    // Check if user has reached their limit
-    if (quota && quota.remaining <= 0) {
-      setShowLimitModal(true);
-      return false;
-    }
+    // For guests, let them proceed - we'll check on the backend
     return true;
+  };
+
+  const handleGuestLimitReached = () => {
+    // Guest has used their free video, show sign-in modal (no dismiss option)
+    setShowSignInModal(true);
   };
 
   if (loading) {
@@ -192,7 +195,7 @@ export default function Dashboard() {
             <UserProfile />
           ) : (
             <button
-              onClick={login}
+              onClick={() => login()}
               className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24">
@@ -237,6 +240,8 @@ export default function Dashboard() {
           <VideoInput
             onVideoSubmitted={handleVideoSubmitted}
             onBeforeSubmit={handleGenerateNotesAttempt}
+            onGuestLimitReached={handleGuestLimitReached}
+            isGuest={!user}
           />
         </div>
 
@@ -319,7 +324,6 @@ export default function Dashboard() {
       <SignInModal
         isOpen={showSignInModal}
         onClose={() => setShowSignInModal(false)}
-        pendingVideoUrl={pendingUrl}
       />
 
       {/* Limit Reached Modal */}

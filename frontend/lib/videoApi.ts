@@ -11,15 +11,51 @@ import {
 } from './types';
 
 /**
+ * Guest video creation response (includes additional guest-specific fields)
+ */
+interface GuestVideoCreateResponse extends VideoCreateResponse {
+  is_guest?: boolean;
+  guest_token?: string;
+}
+
+/**
+ * Guest limit check response
+ */
+interface GuestLimitResponse {
+  can_generate: boolean;
+  requires_auth: boolean;
+  is_cached: boolean;
+  tier: string;
+}
+
+/**
  * Video API Service
  * Handles all video-related API calls
  */
 export const videoApi = {
   /**
-   * Submit a YouTube URL for processing
+   * Submit a YouTube URL for processing (authenticated users)
    */
   async createVideo(url: string): Promise<VideoCreateResponse> {
     const response = await api.post<VideoCreateResponse>('/api/videos', { url });
+    return response.data;
+  },
+
+  /**
+   * Submit a YouTube URL for processing as guest (anonymous users)
+   * Returns video info or error if guest limit reached
+   */
+  async createVideoAsGuest(url: string): Promise<GuestVideoCreateResponse> {
+    const response = await api.post<GuestVideoCreateResponse>('/api/videos/guest', { url });
+    return response.data;
+  },
+
+  /**
+   * Check if guest user can create a new video
+   */
+  async checkGuestLimit(youtubeId?: string): Promise<GuestLimitResponse> {
+    const params = youtubeId ? { youtube_id: youtubeId } : {};
+    const response = await api.get<GuestLimitResponse>('/guest/check-limit', { params });
     return response.data;
   },
 

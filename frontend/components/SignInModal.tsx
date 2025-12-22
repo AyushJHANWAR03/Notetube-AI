@@ -4,18 +4,13 @@ import { useAuth } from '@/contexts/AuthContext';
 
 interface SignInModalProps {
   isOpen: boolean;
-  onClose: () => void;
-  pendingVideoUrl?: string | null;
+  onClose?: () => void;  // Optional - modal cannot be dismissed for guest limit
 }
 
-export default function SignInModal({ isOpen, onClose, pendingVideoUrl }: SignInModalProps) {
+export default function SignInModal({ isOpen }: SignInModalProps) {
   const { login } = useAuth();
 
   const handleSignIn = () => {
-    // Store the pending URL in localStorage so we can process it after auth
-    if (pendingVideoUrl) {
-      localStorage.setItem('pendingVideoUrl', pendingVideoUrl);
-    }
     login();
   };
 
@@ -23,24 +18,11 @@ export default function SignInModal({ isOpen, onClose, pendingVideoUrl }: SignIn
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
+      {/* Backdrop - no click to close */}
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
 
       {/* Modal */}
       <div className="relative bg-gray-800 border border-gray-700 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
-        {/* Close button */}
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
-        >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-
         {/* Content */}
         <div className="text-center">
           {/* Icon */}
@@ -54,7 +36,7 @@ export default function SignInModal({ isOpen, onClose, pendingVideoUrl }: SignIn
             Sign in to Continue
           </h2>
           <p className="text-gray-400 mb-8">
-            Sign in with Google to generate AI-powered notes, flashcards, and more from your YouTube videos.
+            You've used your free video. Sign in with Google to unlock 5 more videos per month.
           </p>
 
           {/* Google Sign In Button */}
@@ -83,13 +65,30 @@ export default function SignInModal({ isOpen, onClose, pendingVideoUrl }: SignIn
             Sign in with Google
           </button>
 
-          {/* Maybe Later */}
-          <button
-            onClick={onClose}
-            className="mt-4 text-gray-400 hover:text-white text-sm transition-colors"
-          >
-            Maybe later
-          </button>
+          {/* Benefits list */}
+          <div className="mt-6 text-left">
+            <p className="text-xs text-gray-500 mb-2">With a free account you get:</p>
+            <ul className="text-xs text-gray-400 space-y-1">
+              <li className="flex items-center gap-2">
+                <svg className="w-3 h-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                5 videos per month
+              </li>
+              <li className="flex items-center gap-2">
+                <svg className="w-3 h-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Save your video library
+              </li>
+              <li className="flex items-center gap-2">
+                <svg className="w-3 h-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                AI chat with your videos
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>

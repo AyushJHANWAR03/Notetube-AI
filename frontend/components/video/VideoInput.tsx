@@ -6,10 +6,18 @@ import { videoApi, extractYouTubeVideoId, getYouTubeThumbnail } from '@/lib/vide
 interface VideoInputProps {
   onVideoSubmitted: (videoId: string) => void;
   onBeforeSubmit?: (url: string) => boolean;
+  onGuestLimitReached?: () => void;  // Called when guest limit is reached
   disabled?: boolean;
+  isGuest?: boolean;  // Whether to use guest API
 }
 
-export default function VideoInput({ onVideoSubmitted, onBeforeSubmit, disabled }: VideoInputProps) {
+export default function VideoInput({
+  onVideoSubmitted,
+  onBeforeSubmit,
+  onGuestLimitReached,
+  disabled,
+  isGuest = false
+}: VideoInputProps) {
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,12 +62,27 @@ export default function VideoInput({ onVideoSubmitted, onBeforeSubmit, disabled 
     setError(null);
 
     try {
-      const response = await videoApi.createVideo(url);
-      // Pass the video ID to parent - they'll handle navigation
-      onVideoSubmitted(response.video.id);
-      setUrl('');
-      setPreview(null);
+      // Use guest API if not authenticated
+      if (isGuest) {
+        const response = await videoApi.createVideoAsGuest(url);
+        onVideoSubmitted(response.video.id);
+        setUrl('');
+        setPreview(null);
+      } else {
+        const response = await videoApi.createVideo(url);
+        onVideoSubmitted(response.video.id);
+        setUrl('');
+        setPreview(null);
+      }
     } catch (err: any) {
+      // Handle guest limit reached
+      if (err.response?.data?.requires_auth || err.response?.data?.detail === 'GUEST_LIMIT_REACHED') {
+        if (onGuestLimitReached) {
+          onGuestLimitReached();
+        }
+        setLoading(false);
+        return;
+      }
       setError(err.response?.data?.detail || 'Failed to submit video. Please try again.');
       setLoading(false);
     }

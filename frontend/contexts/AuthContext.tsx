@@ -7,7 +7,7 @@ import api from '@/lib/api';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: () => void;
+  login: (returnUrl?: string) => void;
   logout: () => void;
   setUser: (user: User | null) => void;
 }
@@ -49,7 +49,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const login = () => {
+  const login = (returnUrl?: string) => {
+    // Save return URL if provided (for returning to current page after login)
+    if (returnUrl) {
+      localStorage.setItem('authReturnUrl', returnUrl);
+    }
     // Redirect to backend Google OAuth endpoint
     window.location.href = `${process.env.NEXT_PUBLIC_API_URL}/auth/google/login`;
   };

@@ -6,6 +6,7 @@ from app.models.transcript_embedding import TranscriptEmbedding
 from app.models.notes import Notes
 from app.models.chat import ChatMessage
 from app.models.export import Export
+from app.models.guest_usage import GuestUsage
 
 __all__ = [
     "User",
@@ -16,4 +17,5 @@ __all__ = [
     "Notes",
     "ChatMessage",
     "Export",
+    "GuestUsage",
 ]

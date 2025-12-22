@@ -44,7 +44,7 @@ class VideoProcessingService:
 
     async def create_video(
         self,
-        user_id: UUID,
+        user_id: Optional[UUID],
         youtube_video_id: str,
         original_url: str,
         db: AsyncSession,
@@ -56,7 +56,7 @@ class VideoProcessingService:
         Create a new video record.
 
         Args:
-            user_id: User's UUID
+            user_id: User's UUID (None for guest users)
             youtube_video_id: YouTube video ID (e.g., "dQw4w9WgXcQ")
             original_url: Original YouTube URL submitted by user
             db: Database session
