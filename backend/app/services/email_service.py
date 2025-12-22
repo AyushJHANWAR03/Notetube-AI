@@ -262,6 +262,147 @@ class EmailService:
             logger.error(f"Failed to send limit increase email for {user_email}: {e}")
             return False
 
+    def _get_feature_update_email_html(self, user_name: str) -> str:
+        """Generate feature update announcement email HTML template."""
+        first_name = user_name.split()[0] if user_name else "there"
+
+        return f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #111827; color: #e5e7eb;">
+    <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+        <!-- Header -->
+        <div style="text-align: center; margin-bottom: 32px;">
+            <h1 style="font-size: 28px; font-weight: bold; margin: 0;">
+                <span style="background: linear-gradient(to right, #3b82f6, #06b6d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">NoteTube AI</span>
+            </h1>
+        </div>
+
+        <!-- Main Content -->
+        <div style="background-color: #1f2937; border-radius: 12px; padding: 32px; border: 1px solid #374151;">
+            <p style="font-size: 18px; color: #f3f4f6; margin: 0 0 16px 0;">
+                Hey {first_name}!
+            </p>
+
+            <p style="color: #9ca3af; line-height: 1.6; margin: 0 0 20px 0;">
+                I've been working hard on NoteTube AI and wanted to share some exciting updates with you!
+            </p>
+
+            <p style="color: #f3f4f6; font-weight: 600; margin: 0 0 16px 0; font-size: 16px;">
+                Here's what's new:
+            </p>
+
+            <!-- Feature Updates -->
+            <div style="background-color: #111827; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
+                <div style="margin-bottom: 16px;">
+                    <span style="color: #3b82f6; font-size: 18px;">&#128269;</span>
+                    <strong style="color: #3b82f6; margin-left: 8px;">Take Me There 2.0</strong>
+                    <p style="color: #9ca3af; margin: 4px 0 0 28px; font-size: 14px;">Semantic search now uses AI embeddings for instant, accurate results</p>
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <span style="color: #a855f7; font-size: 18px;">&#128172;</span>
+                    <strong style="color: #a855f7; margin-left: 8px;">Smarter Chat</strong>
+                    <p style="color: #9ca3af; margin: 4px 0 0 28px; font-size: 14px;">Have deeper conversations about video content with improved AI responses</p>
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <span style="color: #f97316; font-size: 18px;">&#128209;</span>
+                    <strong style="color: #f97316; margin-left: 8px;">Perfect Chapters</strong>
+                    <p style="color: #9ca3af; margin: 4px 0 0 28px; font-size: 14px;">AI-generated breakdowns are now more accurate with better summaries</p>
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <span style="color: #22c55e; font-size: 18px;">&#127183;</span>
+                    <strong style="color: #22c55e; margin-left: 8px;">Dynamic Flashcards</strong>
+                    <p style="color: #9ca3af; margin: 4px 0 0 28px; font-size: 14px;">Flashcards now flip with smooth animations - perfect for learning</p>
+                </div>
+
+                <div>
+                    <span style="color: #06b6d4; font-size: 18px;">&#10024;</span>
+                    <strong style="color: #06b6d4; margin-left: 8px;">Fresh New UI</strong>
+                    <p style="color: #9ca3af; margin: 4px 0 0 28px; font-size: 14px;">Cleaner interface that's easier to navigate</p>
+                </div>
+            </div>
+
+            <!-- New: Try without Sign In -->
+            <div style="background: linear-gradient(to right, #3b82f620, #06b6d420); border-radius: 8px; padding: 16px; margin-bottom: 24px; border: 1px solid #3b82f640;">
+                <p style="color: #f3f4f6; margin: 0; font-size: 14px;">
+                    <strong>New:</strong> Your friends can now try NoteTube AI without signing in! Share the love &#128640;
+                </p>
+            </div>
+
+            <p style="color: #9ca3af; line-height: 1.6; margin: 0 0 20px 0;">
+                I'd love to hear what you think! Just hit reply with any feedback.
+            </p>
+
+            <!-- CTA Button -->
+            <div style="text-align: center; margin: 32px 0;">
+                <a href="{settings.FRONTEND_URL}/dashboard"
+                   style="display: inline-block; background: linear-gradient(to right, #3b82f6, #06b6d4); color: white; font-weight: 600; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-size: 16px;">
+                    Try the New Features
+                </a>
+            </div>
+
+            <p style="color: #9ca3af; line-height: 1.6; margin: 24px 0 0 0;">
+                Best,<br>
+                <strong style="color: #f3f4f6;">Ayush</strong><br>
+                <span style="font-size: 14px;">Creator, NoteTube AI</span>
+            </p>
+        </div>
+
+        <!-- Footer -->
+        <div style="text-align: center; margin-top: 32px; color: #6b7280; font-size: 12px;">
+            <p style="margin: 0 0 8px 0;">
+                Made with care in India
+            </p>
+            <p style="margin: 0;">
+                <a href="{settings.FRONTEND_URL}" style="color: #3b82f6; text-decoration: none;">notetubeai.in</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+    def send_feature_update_email(self, to_email: str, user_name: str) -> bool:
+        """
+        Send feature update announcement email to a user.
+
+        Args:
+            to_email: User's email address
+            user_name: User's display name
+
+        Returns:
+            True if email sent successfully, False otherwise
+        """
+        if not self.enabled:
+            logger.info(f"Email disabled - would send feature update to {to_email}")
+            return False
+
+        try:
+            first_name = user_name.split()[0] if user_name else "there"
+
+            params = {
+                "from": f"Ayush from NoteTube AI <hello@{settings.RESEND_FROM_DOMAIN}>",
+                "to": [to_email],
+                "subject": f"{first_name}, NoteTube AI just got a major upgrade!",
+                "html": self._get_feature_update_email_html(user_name),
+                "reply_to": "ayush@notetubeai.in"
+            }
+
+            email = resend.Emails.send(params)
+            logger.info(f"Feature update email sent to {to_email}: {email}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to send feature update email to {to_email}: {e}")
+            return False
+
 
 # Singleton instance
 email_service = EmailService()
