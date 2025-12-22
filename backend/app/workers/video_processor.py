@@ -24,8 +24,10 @@ from app.services.youtube_service import YouTubeService, YouTubeServiceError
 from app.services.ai_notes_service import AINotesService, AINotesServiceError
 from app.services.chat_service import ChatService, ChatServiceError
 from app.services.transcript_processor import TranscriptProcessor
+from app.services.embedding_service import EmbeddingService, EmbeddingServiceError
 from app.models.video import Video
 from app.models.transcript import Transcript
+from app.models.transcript_embedding import TranscriptEmbedding
 from app.models.notes import Notes
 from app.models.job import Job
 from app.models.user import User
@@ -248,6 +250,41 @@ def _process_video_sync(
                     print(f"[STEP 4.5/7] ✓ English transcript saved")
                 else:
                     print(f"[STEP 4.5/7] Skipped (already English)")
+
+            # Generate embeddings for semantic search
+            print(f"[STEP 4.6/7] Generating embeddings for semantic search...")
+            try:
+                # Get transcript ID for storing embeddings
+                transcript_obj = db.execute(
+                    select(Transcript).where(Transcript.video_id == video_id)
+                ).scalar_one_or_none()
+
+                if transcript_obj:
+                    embedding_service = EmbeddingService()
+                    embeddings_data = embedding_service.generate_embeddings(segments)
+                    print(f"  - Generated {len(embeddings_data)} embeddings")
+
+                    # Store embeddings in database
+                    for emb_data in embeddings_data:
+                        embedding_obj = TranscriptEmbedding(
+                            transcript_id=transcript_obj.id,
+                            segment_index=emb_data["segment_index"],
+                            segment_text=emb_data["text"],
+                            start_time=emb_data["start"],
+                            duration=emb_data["duration"],
+                            embedding=emb_data["embedding"]
+                        )
+                        db.add(embedding_obj)
+                    db.commit()
+                    print(f"[STEP 4.6/7] ✓ Embeddings saved ({len(embeddings_data)} segments)")
+                else:
+                    print(f"[STEP 4.6/7] ⚠ No transcript found, skipping embeddings")
+
+            except EmbeddingServiceError as e:
+                # Embeddings are optional - don't fail the whole job
+                print(f"[STEP 4.6/7] ⚠ Could not generate embeddings: {e}")
+            except Exception as e:
+                print(f"[STEP 4.6/7] ⚠ Unexpected error generating embeddings: {e}")
 
             # Update job status
             job.status = JobStatus.GENERATING_NOTES

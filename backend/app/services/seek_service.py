@@ -1,14 +1,27 @@
 """
-Seek Service for finding timestamps in video transcripts using LLM.
-Uses a slot-based approach to ensure full video coverage for long videos.
+Seek Service for finding timestamps in video transcripts.
+
+Supports two search modes:
+1. Embedding-based search (fast, accurate) - uses pre-computed embeddings
+2. LLM-based search (fallback) - uses slot-based approach with GPT
+
+For new videos with embeddings, uses cosine similarity search.
+For old videos without embeddings, falls back to LLM-based search.
 """
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
+from uuid import UUID
 import json
+
 from openai import OpenAI
+from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.constants import AIModels
 from app.prompts import SEEK_SYSTEM_PROMPT, SEEK_USER_PROMPT_TEMPLATE
+from app.services.embedding_service import EmbeddingService, EmbeddingServiceError
+from app.models.transcript_embedding import TranscriptEmbedding
 
 
 class SeekServiceError(Exception):
@@ -17,7 +30,12 @@ class SeekServiceError(Exception):
 
 
 class SeekService:
-    """Service for finding video timestamps using GPT-3.5-turbo semantic search."""
+    """
+    Service for finding video timestamps using semantic search.
+
+    Primary: Embedding-based search (cosine similarity)
+    Fallback: LLM-based search (GPT slot-based)
+    """
 
     def __init__(self, api_key: Optional[str] = None):
         """Initialize the Seek service with lazy client initialization."""
@@ -29,6 +47,7 @@ class SeekService:
 
         self._api_key = api_key
         self._client = None  # Lazy initialization to avoid fork issues
+        self._embedding_service = None
 
     @property
     def client(self) -> OpenAI:
@@ -37,7 +56,265 @@ class SeekService:
             self._client = OpenAI(api_key=self._api_key)
         return self._client
 
+    @property
+    def embedding_service(self) -> EmbeddingService:
+        """Lazily initialize the EmbeddingService."""
+        if self._embedding_service is None:
+            self._embedding_service = EmbeddingService(api_key=self._api_key)
+        return self._embedding_service
+
+    async def find_timestamp_with_embeddings_async(
+        self,
+        query: str,
+        transcript_id: UUID,
+        db: AsyncSession,
+        top_k: int = 3
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Find timestamp using pre-computed embeddings (fast path) - async version.
+
+        Args:
+            query: Search query from user
+            transcript_id: UUID of the transcript
+            db: Async database session
+            top_k: Number of top results to consider
+
+        Returns:
+            Dict with timestamp, confidence, and matched_text, or None if no embeddings
+        """
+        if not query or not query.strip():
+            raise SeekServiceError("Query cannot be empty")
+
+        # Check if embeddings exist for this transcript
+        result = await db.execute(
+            select(TranscriptEmbedding)
+            .where(TranscriptEmbedding.transcript_id == transcript_id)
+            .limit(1)
+        )
+        embedding_exists = result.scalar_one_or_none()
+
+        if not embedding_exists:
+            return None  # Signal to use fallback
+
+        # Embed the query
+        try:
+            query_embedding = self.embedding_service.embed_query(query)
+        except EmbeddingServiceError as e:
+            raise SeekServiceError(f"Failed to embed query: {str(e)}")
+
+        # Get all embeddings for this transcript
+        result = await db.execute(
+            select(TranscriptEmbedding)
+            .where(TranscriptEmbedding.transcript_id == transcript_id)
+            .order_by(TranscriptEmbedding.segment_index)
+        )
+        embeddings = result.scalars().all()
+
+        if not embeddings:
+            return None  # Signal to use fallback
+
+        # Calculate similarity for each embedding
+        results = []
+        for emb in embeddings:
+            similarity = self.embedding_service.cosine_similarity(
+                query_embedding,
+                list(emb.embedding)
+            )
+            results.append({
+                "start_time": emb.start_time,
+                "text": emb.segment_text,
+                "similarity": similarity
+            })
+
+        # Sort by similarity (highest first)
+        results.sort(key=lambda x: x["similarity"], reverse=True)
+
+        # Get best match
+        if not results:
+            return {
+                "timestamp": None,
+                "confidence": "none",
+                "matched_text": ""
+            }
+
+        best_match = results[0]
+        confidence = self.embedding_service.similarity_to_confidence(best_match["similarity"])
+
+        return {
+            "timestamp": best_match["start_time"],
+            "confidence": confidence,
+            "matched_text": best_match["text"][:100] if best_match["text"] else ""
+        }
+
+    def find_timestamp_with_embeddings(
+        self,
+        query: str,
+        transcript_id: UUID,
+        db: Session,
+        top_k: int = 3
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Find timestamp using pre-computed embeddings (fast path) - sync version.
+        Used by the worker for sync database sessions.
+
+        Args:
+            query: Search query from user
+            transcript_id: UUID of the transcript
+            db: Database session
+            top_k: Number of top results to consider
+
+        Returns:
+            Dict with timestamp, confidence, and matched_text, or None if no embeddings
+        """
+        if not query or not query.strip():
+            raise SeekServiceError("Query cannot be empty")
+
+        # Check if embeddings exist for this transcript
+        embedding_count = db.execute(
+            select(TranscriptEmbedding)
+            .where(TranscriptEmbedding.transcript_id == transcript_id)
+            .limit(1)
+        ).scalar_one_or_none()
+
+        if not embedding_count:
+            return None  # Signal to use fallback
+
+        # Embed the query
+        try:
+            query_embedding = self.embedding_service.embed_query(query)
+        except EmbeddingServiceError as e:
+            raise SeekServiceError(f"Failed to embed query: {str(e)}")
+
+        # Get all embeddings for this transcript
+        embeddings = db.execute(
+            select(TranscriptEmbedding)
+            .where(TranscriptEmbedding.transcript_id == transcript_id)
+            .order_by(TranscriptEmbedding.segment_index)
+        ).scalars().all()
+
+        if not embeddings:
+            return None  # Signal to use fallback
+
+        # Calculate similarity for each embedding
+        results = []
+        for emb in embeddings:
+            similarity = self.embedding_service.cosine_similarity(
+                query_embedding,
+                list(emb.embedding)
+            )
+            results.append({
+                "start_time": emb.start_time,
+                "text": emb.segment_text,
+                "similarity": similarity
+            })
+
+        # Sort by similarity (highest first)
+        results.sort(key=lambda x: x["similarity"], reverse=True)
+
+        # Get best match
+        if not results:
+            return {
+                "timestamp": None,
+                "confidence": "none",
+                "matched_text": ""
+            }
+
+        best_match = results[0]
+        confidence = self.embedding_service.similarity_to_confidence(best_match["similarity"])
+
+        return {
+            "timestamp": best_match["start_time"],
+            "confidence": confidence,
+            "matched_text": best_match["text"][:100] if best_match["text"] else ""
+        }
+
+    async def find_timestamp_async(
+        self,
+        query: str,
+        segments: List[Dict[str, Any]],
+        video_duration: Optional[float] = None,
+        model: str = AIModels.SEEK_MODEL,
+        transcript_id: Optional[UUID] = None,
+        db: Optional[AsyncSession] = None
+    ) -> Dict[str, Any]:
+        """
+        Find the best matching timestamp for a user query (async version).
+
+        If transcript_id and db are provided, tries embedding search first.
+        Falls back to LLM-based slot search if no embeddings exist.
+
+        Args:
+            query: Search query from user
+            segments: Transcript segments (for LLM fallback)
+            video_duration: Video duration in seconds
+            model: LLM model to use for fallback
+            transcript_id: UUID of transcript (for embedding search)
+            db: Async database session (for embedding search)
+
+        Returns:
+            Dict with timestamp, confidence, and matched_text
+        """
+        if not query or not query.strip():
+            raise SeekServiceError("Query cannot be empty")
+
+        # Try embedding-based search first (if available)
+        if transcript_id and db:
+            try:
+                result = await self.find_timestamp_with_embeddings_async(query, transcript_id, db)
+                if result is not None:
+                    return result
+                # result is None means no embeddings, fall through to LLM
+            except SeekServiceError:
+                # Fall back to LLM search
+                pass
+
+        # Fallback: LLM-based slot search
+        return self._find_timestamp_with_llm(query, segments, video_duration, model)
+
     def find_timestamp(
+        self,
+        query: str,
+        segments: List[Dict[str, Any]],
+        video_duration: Optional[float] = None,
+        model: str = AIModels.SEEK_MODEL,
+        transcript_id: Optional[UUID] = None,
+        db: Optional[Session] = None
+    ) -> Dict[str, Any]:
+        """
+        Find the best matching timestamp for a user query (sync version).
+
+        If transcript_id and db are provided, tries embedding search first.
+        Falls back to LLM-based slot search if no embeddings exist.
+
+        Args:
+            query: Search query from user
+            segments: Transcript segments (for LLM fallback)
+            video_duration: Video duration in seconds
+            model: LLM model to use for fallback
+            transcript_id: UUID of transcript (for embedding search)
+            db: Database session (for embedding search)
+
+        Returns:
+            Dict with timestamp, confidence, and matched_text
+        """
+        if not query or not query.strip():
+            raise SeekServiceError("Query cannot be empty")
+
+        # Try embedding-based search first (if available)
+        if transcript_id and db:
+            try:
+                result = self.find_timestamp_with_embeddings(query, transcript_id, db)
+                if result is not None:
+                    return result
+                # result is None means no embeddings, fall through to LLM
+            except SeekServiceError:
+                # Fall back to LLM search
+                pass
+
+        # Fallback: LLM-based slot search
+        return self._find_timestamp_with_llm(query, segments, video_duration, model)
+
+    def _find_timestamp_with_llm(
         self,
         query: str,
         segments: List[Dict[str, Any]],
@@ -45,12 +322,10 @@ class SeekService:
         model: str = AIModels.SEEK_MODEL
     ) -> Dict[str, Any]:
         """
-        Find the best matching timestamp for a user query.
+        Find timestamp using LLM-based slot search (fallback method).
+
         Uses slot-based indexing to ensure full video coverage.
         """
-        if not query or not query.strip():
-            raise SeekServiceError("Query cannot be empty")
-
         if not segments:
             raise SeekServiceError("No transcript segments provided")
 

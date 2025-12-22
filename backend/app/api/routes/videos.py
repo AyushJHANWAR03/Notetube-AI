@@ -405,10 +405,12 @@ async def seek_to_topic(
 
     try:
         seek_service = SeekService()
-        result = seek_service.find_timestamp(
+        result = await seek_service.find_timestamp_async(
             query=request.query,
             segments=video.transcript.segments,
-            video_duration=video.duration_seconds
+            video_duration=video.duration_seconds,
+            transcript_id=video.transcript.id,
+            db=db
         )
 
         return SeekResponse(**result)
