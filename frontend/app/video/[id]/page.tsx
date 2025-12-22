@@ -343,8 +343,8 @@ export default function VideoDetailPage() {
       const result = await videoApi.seekToTopic(video.id, searchTerm);
       setSeekResult(result);
 
-      // Auto-seek if high confidence match found
-      if (result.timestamp !== null && result.confidence === 'high') {
+      // Auto-seek if a valid timestamp was found
+      if (result.timestamp !== null && result.confidence !== 'none') {
         seekToTime(result.timestamp);
       }
     } catch (err: any) {

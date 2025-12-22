@@ -35,6 +35,10 @@ firebase-admin==6.4.0
 # HTTP Client
 httpx==0.26.0
 
+# Vector Search
+pgvector==0.3.6
+numpy>=1.24.0
+
 # Utils
 python-dotenv==1.0.0
 python-dateutil==2.8.2

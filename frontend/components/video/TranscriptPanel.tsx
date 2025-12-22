@@ -131,6 +131,16 @@ export default function TranscriptPanel({
     onClearSearch?.();
   }, [onClearSearch]);
 
+  // Auto-dismiss search result after 3 seconds
+  useEffect(() => {
+    if (searchResult && searchResult.timestamp !== null) {
+      const timer = setTimeout(() => {
+        onClearSearch?.();
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [searchResult, onClearSearch]);
+
   // Group segments
   const groupedSegments = useMemo(() => groupSegments(segments), [segments]);
 
@@ -263,7 +273,7 @@ export default function TranscriptPanel({
             <div className="flex items-center gap-2">
               <span className="text-yellow-400">💡</span>
               <span className="text-sm text-blue-200">
-                Search to find moments • Select text for AI help
+                AI search: describe what you're looking for in any language
               </span>
             </div>
             <button
@@ -295,7 +305,7 @@ export default function TranscriptPanel({
                     handleSearch();
                   }
                 }}
-                placeholder="Search anything in video..."
+                placeholder="Describe what you're looking for..."
                 disabled={isSearching}
                 className="w-full bg-gray-700 border border-gray-600 rounded-lg pl-9 pr-10 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
               />
@@ -335,20 +345,30 @@ export default function TranscriptPanel({
 
         {/* Search result - inline below search bar */}
         {searchResult && searchResult.timestamp !== null && (
-          <button
-            onClick={() => {
-              onSeek(searchResult.timestamp!);
-              handleClearSearch();
-            }}
-            className={`w-full text-left p-3 rounded-lg border transition-all hover:scale-[1.01] ${
+          <div
+            className={`relative w-full p-3 rounded-lg border transition-all ${
               searchResult.confidence === 'high'
-                ? 'bg-green-900/30 border-green-700 hover:bg-green-900/40'
+                ? 'bg-green-900/30 border-green-700'
                 : searchResult.confidence === 'medium'
-                ? 'bg-yellow-900/30 border-yellow-700 hover:bg-yellow-900/40'
-                : 'bg-gray-700/30 border-gray-600 hover:bg-gray-700/40'
+                ? 'bg-yellow-900/30 border-yellow-700'
+                : 'bg-gray-700/30 border-gray-600'
             }`}
           >
-            <div className="flex items-center justify-between mb-1">
+            {/* Close button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleClearSearch();
+              }}
+              className="absolute top-2 right-2 text-gray-400 hover:text-white transition-colors p-1"
+              aria-label="Dismiss result"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            <div className="flex items-center justify-between mb-1 pr-6">
               <span className="font-mono text-lg text-blue-400 font-bold">
                 {formatTime(searchResult.timestamp)}
               </span>
@@ -363,7 +383,7 @@ export default function TranscriptPanel({
             {searchResult.matched_text && (
               <p className="text-xs text-gray-400 line-clamp-2">"{searchResult.matched_text}"</p>
             )}
-          </button>
+          </div>
         )}
 
         {/* No match found */}
