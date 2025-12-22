@@ -42,17 +42,19 @@ class UserNotesService:
         return self._client
 
     async def get_notes_record(self, video_id: str, user_id: str) -> Optional[Notes]:
-        """Get the Notes record for a video, verifying user ownership."""
-        # Query video with user ownership check
+        """Get the Notes record for a video, with access control for cached videos."""
+        # Query video without ownership filter first
         result = await self.db.execute(
-            select(Video).where(
-                Video.id == video_id,
-                Video.user_id == user_id
-            )
+            select(Video).where(Video.id == video_id)
         )
         video = result.scalar_one_or_none()
 
         if not video:
+            return None
+
+        # Access control: allow if user owns it OR if video is READY (cached)
+        # READY videos can be accessed by any authenticated user
+        if video.user_id != user_id and video.status != "READY":
             return None
 
         # Get the notes for this video

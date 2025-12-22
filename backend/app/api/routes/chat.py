@@ -29,10 +29,10 @@ router = APIRouter(prefix="/api/videos", tags=["chat"])
 
 
 async def get_video_with_notes(video_id: UUID, user_id: UUID, db: AsyncSession):
-    """Helper to get video and notes, verifying ownership."""
-    # Get video
+    """Helper to get video and notes, with access control for cached videos."""
+    # Get video (without user_id filter first)
     result = await db.execute(
-        select(Video).where(Video.id == video_id, Video.user_id == user_id)
+        select(Video).where(Video.id == video_id)
     )
     video = result.scalar_one_or_none()
 
@@ -40,6 +40,14 @@ async def get_video_with_notes(video_id: UUID, user_id: UUID, db: AsyncSession):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Video not found"
+        )
+
+    # Access control: allow if user owns it OR if video is READY (cached)
+    # READY videos can be accessed by any authenticated user for chat
+    if video.user_id != user_id and video.status != "READY":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this video"
         )
 
     # Get notes
