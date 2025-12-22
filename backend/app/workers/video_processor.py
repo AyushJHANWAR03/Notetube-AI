@@ -57,7 +57,7 @@ sync_engine = create_engine(sync_database_url, echo=False, pool_pre_ping=True)
 SyncSessionLocal = sessionmaker(bind=sync_engine, expire_on_commit=False)
 
 
-def process_video_task(video_id: str, user_id: str, youtube_url: str) -> Dict[str, Any]:
+def process_video_task(video_id: str, user_id: Optional[str], youtube_url: str) -> Dict[str, Any]:
     """
     Background task to process a YouTube video.
 
@@ -66,7 +66,7 @@ def process_video_task(video_id: str, user_id: str, youtube_url: str) -> Dict[st
 
     Args:
         video_id: Video's UUID as string
-        user_id: User's UUID as string
+        user_id: User's UUID as string (None for guest users)
         youtube_url: Original YouTube URL
 
     Returns:
@@ -75,12 +75,12 @@ def process_video_task(video_id: str, user_id: str, youtube_url: str) -> Dict[st
     print(f"\n{'='*60}")
     print(f"[JOB START] Processing video: {video_id}")
     print(f"  - URL: {youtube_url}")
-    print(f"  - User: {user_id}")
+    print(f"  - User: {user_id or 'GUEST'}")
     print(f"{'='*60}")
 
     result = _process_video_sync(
         UUID(video_id),
-        UUID(user_id),
+        UUID(user_id) if user_id else None,
         youtube_url
     )
 
@@ -92,7 +92,7 @@ def process_video_task(video_id: str, user_id: str, youtube_url: str) -> Dict[st
 
 def _process_video_sync(
     video_id: UUID,
-    user_id: UUID,
+    user_id: Optional[UUID],
     youtube_url: str
 ) -> Dict[str, Any]:
     """
@@ -378,11 +378,12 @@ def _process_video_sync(
                 video.processed_at = datetime.utcnow()
                 db.commit()
 
-            # Increment user's videos_analyzed counter
-            user = db.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
-            if user:
-                user.videos_analyzed += 1
-                db.commit()
+            # Increment user's videos_analyzed counter (skip for guest users)
+            if user_id:
+                user = db.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+                if user:
+                    user.videos_analyzed += 1
+                    db.commit()
 
             total_tokens = (
                 ai_results["chapters"]["tokens_used"] +
@@ -596,13 +597,13 @@ def _derive_key_timestamps_from_chapters(
     return key_timestamps
 
 
-def enqueue_video_processing(video_id: UUID, user_id: UUID, youtube_url: str) -> str:
+def enqueue_video_processing(video_id: UUID, user_id: Optional[UUID], youtube_url: str) -> str:
     """
     Enqueue a video for background processing.
 
     Args:
         video_id: Video's UUID
-        user_id: User's UUID
+        user_id: User's UUID (None for guest users)
         youtube_url: YouTube URL to process
 
     Returns:
@@ -611,7 +612,7 @@ def enqueue_video_processing(video_id: UUID, user_id: UUID, youtube_url: str) ->
     job = video_queue.enqueue(
         process_video_task,
         str(video_id),
-        str(user_id),
+        str(user_id) if user_id else None,
         youtube_url,
         job_timeout=600,  # 10 minute timeout
         result_ttl=3600   # Keep result for 1 hour

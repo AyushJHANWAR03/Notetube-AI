@@ -14,7 +14,7 @@ class Video(Base):
     __tablename__ = "videos"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)  # Nullable for guest users
     youtube_video_id = Column(String(32), nullable=False, index=True)
     original_url = Column(Text, nullable=False)
     title = Column(Text, nullable=True)

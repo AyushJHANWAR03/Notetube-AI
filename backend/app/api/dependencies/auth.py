@@ -3,7 +3,7 @@ Authentication dependencies for FastAPI routes.
 """
 from typing import Optional
 from uuid import UUID
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,7 @@ from app.services.user_service import UserService
 
 
 security = HTTPBearer()
+security_optional = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
@@ -77,7 +78,7 @@ async def get_current_user(
 
 
 async def get_current_user_optional(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional),
     db: AsyncSession = Depends(get_db)
 ) -> Optional[User]:
     """
@@ -94,6 +95,22 @@ async def get_current_user_optional(
         return None
 
     try:
-        return await get_current_user(credentials, db)
-    except HTTPException:
+        token = credentials.credentials
+        payload = verify_token(token)
+        if payload is None:
+            return None
+
+        user_id_str: Optional[str] = payload.get("user_id")
+        if user_id_str is None:
+            return None
+
+        try:
+            user_id = UUID(user_id_str)
+        except ValueError:
+            return None
+
+        user_service = UserService()
+        user = await user_service.get_user_by_id(user_id, db)
+        return user
+    except Exception:
         return None

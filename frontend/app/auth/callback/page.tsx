@@ -45,6 +45,14 @@ function AuthCallbackContent() {
         // Set flag to indicate recent auth - prevents redirect race condition on video page
         sessionStorage.setItem('recentAuth', 'true');
 
+        // Check for return URL (for returning to current page after login)
+        const returnUrl = localStorage.getItem('authReturnUrl');
+        if (returnUrl) {
+          localStorage.removeItem('authReturnUrl');
+          router.push(returnUrl);
+          return;
+        }
+
         // Check for pending video URL
         const pendingVideoUrl = localStorage.getItem('pendingVideoUrl');
         if (pendingVideoUrl) {

@@ -49,7 +49,7 @@ interface YTPlayer {
 export default function VideoDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, login } = useAuth();
 
   const [video, setVideo] = useState<VideoDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -90,29 +90,26 @@ export default function VideoDetailPage() {
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    // Don't redirect immediately - give context time to load from localStorage
-    // This handles the case where user just signed in via auth callback
+    // Handle post-auth-callback navigation
+    // Note: We no longer redirect for guests - they can view guest videos
     if (!authLoading && !user) {
-      // Check if there's a token in localStorage - if so, user might be loading
-      const token = localStorage.getItem('token');
-      // Also check for recent auth - if user just logged in, give it more time
+      // Check for recent auth flag - if user just logged in, clear it
       const recentAuth = sessionStorage.getItem('recentAuth');
-      if (!token && !recentAuth) {
-        router.push('/dashboard');
-      } else if (recentAuth) {
-        // Clear the flag after checking
+      if (recentAuth) {
         sessionStorage.removeItem('recentAuth');
       }
+      // Don't redirect - allow guests to view videos
+      // The API will return 401 if they try to access a non-guest video
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading]);
 
-  // Initial fetch - check for token to handle post-auth-callback navigation
+  // Initial fetch - always try to fetch if we have a video ID
+  // The API will handle access control (guest videos are accessible without auth)
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (params.id && (user || token)) {
+    if (params.id) {
       fetchVideo();
     }
-  }, [params.id, user]);
+  }, [params.id]);
 
   // Map job status to step number
   const getStepFromJobStatus = (jobStatus: Job['status']): number => {
@@ -329,6 +326,11 @@ export default function VideoDetailPage() {
     setActiveTab('chat');
   };
 
+  // Handle sign in from Chat/Notes tabs - return to current video after login
+  const handleSignIn = () => {
+    login(`/video/${params.id}`);
+  };
+
   // Take Me There search handler - accepts query from TranscriptPanel
   const handleSeekSearch = async (query?: string) => {
     const searchTerm = query || seekQuery;
@@ -502,6 +504,8 @@ export default function VideoDetailPage() {
               notes={userNotes}
               onSeek={seekToTime}
               onNotesChange={setUserNotes}
+              isGuest={!user}
+              onSignIn={handleSignIn}
             />
           )}
 
@@ -593,6 +597,8 @@ export default function VideoDetailPage() {
               pendingMessage={pendingChatMessage || undefined}
               onPendingMessageHandled={() => setPendingChatMessage(null)}
               onSeek={seekToTime}
+              isGuest={!user}
+              onSignIn={handleSignIn}
             />
           )}
         </div>
