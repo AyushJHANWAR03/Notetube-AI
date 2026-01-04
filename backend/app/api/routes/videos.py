@@ -529,7 +529,7 @@ async def reprocess_video(
 async def seek_to_topic(
     video_id: UUID,
     request: SeekRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db)
 ) -> SeekResponse:
     """
@@ -539,6 +539,11 @@ async def seek_to_topic(
     the video transcript. Supports queries in any language.
 
     Returns the best matching timestamp with confidence level.
+
+    Access control:
+    - Guest videos (user_id=None): accessible by anyone
+    - READY videos: accessible by anyone (cached videos)
+    - Non-READY videos: require ownership
     """
     video_service = VideoProcessingService()
 
@@ -554,8 +559,24 @@ async def seek_to_topic(
             detail="Video not found"
         )
 
-    # Verify ownership
-    if video.user_id != current_user.id:
+    # Check access permissions (same pattern as get_video and chat)
+    # Guest videos (user_id=None) are accessible by anyone
+    # READY videos are accessible by anyone (cached videos can be searched by all)
+    # Non-READY videos require ownership
+    if video.user_id is None:
+        # Guest video - allow access
+        pass
+    elif video.status == "READY":
+        # Cached/ready videos - search accessible by anyone
+        pass
+    elif current_user is None:
+        # Non-ready video and no authentication
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required"
+        )
+    elif video.user_id != current_user.id:
+        # Non-ready video and user doesn't own it
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to access this video"
