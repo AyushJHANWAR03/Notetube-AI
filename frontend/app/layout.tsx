@@ -8,6 +8,13 @@ const inter = Inter({ subsets: ['latin'] })
 export const metadata: Metadata = {
   title: 'NoteTube AI - YouTube Smart Notes Hub',
   description: 'Transform YouTube videos into complete learning experiences with AI-generated notes, quizzes, and interactive features.',
+  icons: {
+    icon: [
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/icon.svg', type: 'image/svg+xml', sizes: '512x512' },
+    ],
+    apple: '/icon.svg',
+  },
 }
 
 export default function RootLayout({
