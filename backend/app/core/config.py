@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     RESEND_FROM_DOMAIN: str = "notetubeai.in"
 
     # Admin
-    ADMIN_EMAILS: str = "ayushjhanwar12@gmail.com,agrawalabhinay25@gmail.com"  # Comma-separated list of admin emails
+    ADMIN_EMAILS: str = "ayushjhanwar12@gmail.com,agrawalabhinay25@gmail.com,akshayjhanwar@gmail.com"  # Comma-separated list of admin emails
 
     # API
     API_V1_PREFIX: str = "/api"

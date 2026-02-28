@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 
 // Admin email list (should match backend)
-const ADMIN_EMAILS = ['ayushjhanwar12@gmail.com', 'agrawalabhinay25@gmail.com'];
+const ADMIN_EMAILS = ['ayushjhanwar12@gmail.com', 'agrawalabhinay25@gmail.com', 'akshayjhanwar@gmail.com'];
 
 export default function AdminLayout({
   children,
