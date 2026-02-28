@@ -46,16 +46,16 @@ export default function AdminLayout({
   ];
 
   return (
-    <div className="min-h-screen bg-gray-900 flex">
-      {/* Sidebar */}
-      <aside className="w-64 bg-gray-800 border-r border-gray-700">
+    <div className="h-screen bg-gray-900 flex overflow-hidden">
+      {/* Sidebar - Fixed */}
+      <aside className="w-64 bg-gray-800 border-r border-gray-700 flex flex-col h-screen fixed left-0 top-0">
         <div className="p-4 border-b border-gray-700">
           <Link href="/dashboard" className="flex items-center gap-2">
             <span className="text-2xl">🎓</span>
             <span className="text-white font-bold">NoteTube Admin</span>
           </Link>
         </div>
-        <nav className="p-4">
+        <nav className="p-4 flex-1">
           <ul className="space-y-2">
             {navItems.map((item) => (
               <li key={item.href}>
@@ -74,7 +74,7 @@ export default function AdminLayout({
             ))}
           </ul>
         </nav>
-        <div className="absolute bottom-0 left-0 w-64 p-4 border-t border-gray-700">
+        <div className="p-4 border-t border-gray-700">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm">
               {user?.name?.charAt(0) || 'A'}
@@ -87,8 +87,8 @@ export default function AdminLayout({
         </div>
       </aside>
 
-      {/* Main content */}
-      <main className="flex-1 overflow-auto">
+      {/* Main content - Scrollable */}
+      <main className="flex-1 ml-64 h-screen overflow-y-auto">
         <div className="p-8">
           {children}
         </div>
