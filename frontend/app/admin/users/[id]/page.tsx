@@ -104,18 +104,30 @@ export default function AdminUserDetailPage() {
         ) : (
           <div className="space-y-3">
             {user.videos.map((video) => (
-              <div key={video.id} className="bg-gray-900 rounded-lg p-4 flex items-center justify-between">
-                <div>
-                  <div className="text-white">{video.title || 'Untitled'}</div>
-                  <div className="text-gray-400 text-sm">{formatDate(video.created_at)}</div>
+              <div key={video.id} className="bg-gray-900 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="text-white">{video.title || 'Untitled'}</div>
+                    <div className="text-gray-400 text-sm">{formatDate(video.created_at)}</div>
+                    {video.youtube_video_id && (
+                      <a
+                        href={`https://youtube.com/watch?v=${video.youtube_video_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-400 hover:text-blue-300 text-sm mt-1 inline-block"
+                      >
+                        Watch on YouTube
+                      </a>
+                    )}
+                  </div>
+                  <span className={`px-3 py-1 rounded-full text-sm ${
+                    video.status === 'READY' ? 'bg-green-900 text-green-300' :
+                    video.status === 'FAILED' ? 'bg-red-900 text-red-300' :
+                    'bg-yellow-900 text-yellow-300'
+                  }`}>
+                    {video.status}
+                  </span>
                 </div>
-                <span className={`px-3 py-1 rounded-full text-sm ${
-                  video.status === 'READY' ? 'bg-green-900 text-green-300' :
-                  video.status === 'FAILED' ? 'bg-red-900 text-red-300' :
-                  'bg-yellow-900 text-yellow-300'
-                }`}>
-                  {video.status}
-                </span>
               </div>
             ))}
           </div>

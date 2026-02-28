@@ -75,14 +75,26 @@ export default function AdminLayout({
           </ul>
         </nav>
         <div className="p-4 border-t border-gray-700">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm">
-              {user?.name?.charAt(0) || 'A'}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm">
+                {user?.name?.charAt(0) || 'A'}
+              </div>
+              <div className="text-sm">
+                <div className="text-white font-medium">{user?.name}</div>
+                <div className="text-gray-400 text-xs">Admin</div>
+              </div>
             </div>
-            <div className="text-sm">
-              <div className="text-white font-medium">{user?.name}</div>
-              <div className="text-gray-400 text-xs">Admin</div>
-            </div>
+            <button
+              onClick={() => {
+                localStorage.removeItem('token');
+                window.location.href = '/';
+              }}
+              className="text-gray-400 hover:text-red-400 text-sm"
+              title="Logout"
+            >
+              Logout
+            </button>
           </div>
         </div>
       </aside>

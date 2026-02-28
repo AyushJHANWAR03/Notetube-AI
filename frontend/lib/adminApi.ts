@@ -35,6 +35,8 @@ export interface VideoListItem {
   is_guest: boolean;
   created_at: string;
   duration_seconds: number | null;
+  youtube_video_id: string | null;
+  original_url: string | null;
 }
 
 export interface GuestListItem {
@@ -59,6 +61,8 @@ export interface UserDetail {
     title: string | null;
     status: string;
     created_at: string;
+    youtube_video_id: string | null;
+    original_url: string | null;
   }>;
   recent_chats: Array<{
     id: string;
@@ -66,6 +70,18 @@ export interface UserDetail {
     content: string;
     created_at: string;
   }>;
+}
+
+export interface AdminInsights {
+  insights: string;
+  video_categories: Array<{ name: string; count: number }>;
+  user_behavior: {
+    total_videos: number;
+    success_rate: number;
+    total_chats: number;
+    signups_last_30_days: number;
+  };
+  recommendations: string[];
 }
 
 // Admin API calls
@@ -103,6 +119,12 @@ export const adminApi = {
     const response = await api.get('/api/admin/guests', {
       params: { limit, offset }
     });
+    return response.data;
+  },
+
+  // Get AI insights
+  getInsights: async (): Promise<AdminInsights> => {
+    const response = await api.get('/api/admin/insights');
     return response.data;
   }
 };

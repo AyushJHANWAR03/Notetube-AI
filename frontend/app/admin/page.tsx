@@ -2,15 +2,18 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { adminApi, AdminStats } from '@/lib/adminApi';
+import { adminApi, AdminStats, AdminInsights } from '@/lib/adminApi';
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState<AdminStats | null>(null);
+  const [insights, setInsights] = useState<AdminInsights | null>(null);
   const [loading, setLoading] = useState(true);
+  const [insightsLoading, setInsightsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadStats();
+    loadInsights();
   }, []);
 
   const loadStats = async () => {
@@ -22,6 +25,18 @@ export default function AdminDashboard() {
       setError(err.response?.data?.detail || 'Failed to load stats');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadInsights = async () => {
+    try {
+      setInsightsLoading(true);
+      const data = await adminApi.getInsights();
+      setInsights(data);
+    } catch (err: any) {
+      console.error('Failed to load insights:', err);
+    } finally {
+      setInsightsLoading(false);
     }
   };
 
@@ -130,6 +145,64 @@ export default function AdminDashboard() {
         </div>
       </div>
 
+      {/* AI Insights */}
+      {insights && (
+        <div className="bg-gradient-to-r from-purple-900/50 to-blue-900/50 rounded-xl border border-purple-700 p-6">
+          <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+            <span>🤖</span> AI Insights
+          </h2>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Summary */}
+            <div>
+              <h3 className="text-gray-300 font-medium mb-2">Summary</h3>
+              <p className="text-gray-400 text-sm whitespace-pre-line">{insights.insights}</p>
+            </div>
+
+            {/* Video Categories */}
+            <div>
+              <h3 className="text-gray-300 font-medium mb-2">Content Categories</h3>
+              <div className="space-y-2">
+                {insights.video_categories.map((cat) => (
+                  <div key={cat.name} className="flex items-center justify-between">
+                    <span className="text-gray-400 text-sm">{cat.name}</span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-32 bg-gray-700 rounded-full h-2">
+                        <div
+                          className="bg-blue-500 h-2 rounded-full"
+                          style={{ width: `${Math.min((cat.count / insights.user_behavior.total_videos) * 100, 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-white text-sm w-8">{cat.count}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Recommendations */}
+          <div className="mt-6">
+            <h3 className="text-gray-300 font-medium mb-2">Recommendations</h3>
+            <ul className="space-y-2">
+              {insights.recommendations.map((rec, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm">
+                  <span className="text-green-400">→</span>
+                  <span className="text-gray-400">{rec}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {insightsLoading && (
+        <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 animate-pulse">
+          <div className="h-4 bg-gray-700 rounded w-32 mb-4"></div>
+          <div className="h-20 bg-gray-700 rounded"></div>
+        </div>
+      )}
+
       {/* Quick Links */}
       <div>
         <h2 className="text-xl font-semibold text-white mb-4">Quick Actions</h2>
@@ -147,7 +220,7 @@ export default function AdminDashboard() {
             View Failed Videos
           </Link>
           <button
-            onClick={loadStats}
+            onClick={() => { loadStats(); loadInsights(); }}
             className="bg-gray-700 hover:bg-gray-600 text-white px-6 py-3 rounded-lg transition-colors"
           >
             Refresh Stats

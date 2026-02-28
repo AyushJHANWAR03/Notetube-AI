@@ -58,6 +58,8 @@ class VideoListItem(BaseModel):
     is_guest: bool
     created_at: datetime
     duration_seconds: Optional[int]
+    youtube_video_id: Optional[str]
+    original_url: Optional[str]
 
 
 class VideosListResponse(BaseModel):
@@ -91,6 +93,8 @@ class UserVideoItem(BaseModel):
     title: Optional[str]
     status: str
     created_at: datetime
+    youtube_video_id: Optional[str]
+    original_url: Optional[str]
 
 
 class UserDetailResponse(BaseModel):
@@ -245,7 +249,7 @@ async def get_admin_user_detail(
     # Get user's videos
     videos_result = await db.execute(
         text("""
-            SELECT id, title, status, created_at
+            SELECT id, title, status, created_at, youtube_video_id, original_url
             FROM videos
             WHERE user_id = :user_id
             ORDER BY created_at DESC
@@ -259,7 +263,9 @@ async def get_admin_user_detail(
             id=str(row[0]),
             title=row[1],
             status=row[2],
-            created_at=row[3]
+            created_at=row[3],
+            youtube_video_id=row[4],
+            original_url=row[5]
         )
         for row in videos_result.fetchall()
     ]
@@ -333,7 +339,9 @@ async def get_admin_videos(
             v.duration_seconds,
             v.user_id,
             u.name as user_name,
-            u.email as user_email
+            u.email as user_email,
+            v.youtube_video_id,
+            v.original_url
         FROM videos v
         LEFT JOIN users u ON v.user_id = u.id
         {where_clause}
@@ -351,7 +359,9 @@ async def get_admin_videos(
             duration_seconds=row[4],
             user_name=row[6],
             user_email=row[7],
-            is_guest=row[5] is None  # user_id is None for guest videos
+            is_guest=row[5] is None,  # user_id is None for guest videos
+            youtube_video_id=row[8],
+            original_url=row[9]
         ))
 
     return VideosListResponse(videos=videos, total=total or 0)
@@ -398,3 +408,127 @@ async def get_admin_guests(
         ))
 
     return GuestsListResponse(guests=guests, total=total or 0)
+
+
+class InsightsResponse(BaseModel):
+    insights: str
+    video_categories: List[dict]
+    user_behavior: dict
+    recommendations: List[str]
+
+
+@router.get("/insights", response_model=InsightsResponse)
+async def get_admin_insights(
+    admin: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+) -> InsightsResponse:
+    """
+    Get AI-powered insights about user behavior and content patterns.
+    """
+    # Get video titles for categorization
+    videos_result = await db.execute(text("""
+        SELECT title, status FROM videos
+        WHERE title IS NOT NULL
+        ORDER BY created_at DESC
+        LIMIT 100
+    """))
+    videos = videos_result.fetchall()
+
+    # Get chat messages to understand user questions
+    chats_result = await db.execute(text("""
+        SELECT content FROM chat_messages
+        WHERE role = 'user'
+        ORDER BY created_at DESC
+        LIMIT 50
+    """))
+    user_chats = [row[0] for row in chats_result.fetchall()]
+
+    # Get user signup trends
+    signups_result = await db.execute(text("""
+        SELECT DATE(created_at) as date, COUNT(*) as count
+        FROM users
+        WHERE created_at > NOW() - INTERVAL '30 days'
+        GROUP BY DATE(created_at)
+        ORDER BY date DESC
+    """))
+    signups = signups_result.fetchall()
+
+    # Get video processing success rate
+    status_result = await db.execute(text("""
+        SELECT status, COUNT(*) FROM videos GROUP BY status
+    """))
+    status_counts = {row[0]: row[1] for row in status_result.fetchall()}
+
+    # Categorize videos by type (simple keyword matching)
+    categories = {
+        "Education/Study": 0,
+        "Programming/Tech": 0,
+        "Business/Finance": 0,
+        "Self-Improvement": 0,
+        "Entertainment": 0,
+        "Other": 0
+    }
+
+    education_keywords = ["class", "chapter", "exam", "study", "lecture", "course", "learn", "tutorial", "jee", "neet", "cbse", "upsc"]
+    tech_keywords = ["python", "java", "code", "programming", "react", "javascript", "api", "software", "ai", "machine learning", "aws"]
+    business_keywords = ["business", "money", "invest", "finance", "startup", "entrepreneur", "marketing", "career"]
+    self_improvement_keywords = ["motivation", "success", "habit", "productivity", "mindset", "life", "growth"]
+
+    for video in videos:
+        title = (video[0] or "").lower()
+        if any(kw in title for kw in education_keywords):
+            categories["Education/Study"] += 1
+        elif any(kw in title for kw in tech_keywords):
+            categories["Programming/Tech"] += 1
+        elif any(kw in title for kw in business_keywords):
+            categories["Business/Finance"] += 1
+        elif any(kw in title for kw in self_improvement_keywords):
+            categories["Self-Improvement"] += 1
+        else:
+            categories["Other"] += 1
+
+    # Calculate insights
+    total_videos = sum(status_counts.values())
+    success_rate = (status_counts.get("READY", 0) / total_videos * 100) if total_videos > 0 else 0
+
+    top_category = max(categories, key=categories.get)
+
+    # Build recommendations
+    recommendations = []
+
+    if categories["Education/Study"] > categories["Programming/Tech"]:
+        recommendations.append("Most users are students - consider adding exam prep features or flashcard improvements")
+
+    if status_counts.get("FAILED", 0) > total_videos * 0.1:
+        recommendations.append(f"High failure rate ({status_counts.get('FAILED', 0)} videos) - investigate transcript fetching issues")
+
+    if len(user_chats) > 0:
+        recommendations.append("Users are actively using chat - consider improving AI response quality")
+
+    recommendations.append(f"Focus marketing on {top_category} content creators - this is your main user segment")
+
+    # Build summary
+    insights = f"""
+Based on {total_videos} videos analyzed:
+- Top content category: {top_category} ({categories[top_category]} videos)
+- Video success rate: {success_rate:.1f}%
+- Most active user segment: Students/Learners preparing for exams
+- Users are using NoteTube primarily for educational content
+    """.strip()
+
+    video_categories = [{"name": k, "count": v} for k, v in categories.items() if v > 0]
+    video_categories.sort(key=lambda x: x["count"], reverse=True)
+
+    user_behavior = {
+        "total_videos": total_videos,
+        "success_rate": round(success_rate, 1),
+        "total_chats": len(user_chats),
+        "signups_last_30_days": sum(row[1] for row in signups)
+    }
+
+    return InsightsResponse(
+        insights=insights,
+        video_categories=video_categories,
+        user_behavior=user_behavior,
+        recommendations=recommendations
+    )

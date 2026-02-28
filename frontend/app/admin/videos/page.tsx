@@ -107,6 +107,9 @@ export default function AdminVideosPage() {
                 Duration
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                YouTube
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
                 Created
               </th>
             </tr>
@@ -140,6 +143,20 @@ export default function AdminVideosPage() {
                 </td>
                 <td className="px-6 py-4">
                   <span className="text-gray-400">{formatDuration(video.duration_seconds)}</span>
+                </td>
+                <td className="px-6 py-4">
+                  {video.youtube_video_id ? (
+                    <a
+                      href={`https://youtube.com/watch?v=${video.youtube_video_id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-400 hover:text-blue-300 text-sm"
+                    >
+                      Watch
+                    </a>
+                  ) : (
+                    <span className="text-gray-500">-</span>
+                  )}
                 </td>
                 <td className="px-6 py-4">
                   <span className="text-gray-400">{formatDate(video.created_at)}</span>
