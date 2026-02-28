@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import verify_token
+from app.core.config import settings
 from app.schemas.user import User
 from app.schemas.auth import TokenData
 from app.services.user_service import UserService
@@ -114,3 +115,29 @@ async def get_current_user_optional(
         return user
     except Exception:
         return None
+
+
+async def get_admin_user(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    """
+    Get current user and verify they are an admin.
+
+    Args:
+        current_user: The authenticated user
+
+    Returns:
+        User object if they are an admin
+
+    Raises:
+        HTTPException: If user is not an admin
+    """
+    admin_emails = [email.strip().lower() for email in settings.ADMIN_EMAILS.split(',')]
+
+    if current_user.email.lower() not in admin_emails:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+
+    return current_user

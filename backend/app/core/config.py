@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str | None = None
     RESEND_FROM_DOMAIN: str = "notetubeai.in"
 
+    # Admin
+    ADMIN_EMAILS: str = "ayushjhanwar12@gmail.com"  # Comma-separated list of admin emails
+
     # API
     API_V1_PREFIX: str = "/api"
     PROJECT_NAME: str = "NoteTube AI"
