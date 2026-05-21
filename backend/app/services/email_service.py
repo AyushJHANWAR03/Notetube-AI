@@ -136,7 +136,7 @@ class EmailService:
                 "to": [to_email],
                 "subject": f"Welcome to NoteTube AI, {first_name}!",
                 "html": self._get_welcome_email_html(user_name),
-                "reply_to": "ayush@notetubeai.in"
+                "reply_to": "ayushjhanwar12@gmail.com"
             }
 
             email = resend.Emails.send(params)
@@ -354,7 +354,7 @@ class EmailService:
                 "to": [to_email],
                 "subject": f"Your NoteTube AI Limit Has Been Increased to {new_limit} Videos!",
                 "html": self._get_limit_increase_approval_html(user_name, new_limit),
-                "reply_to": "ayush@notetubeai.in"
+                "reply_to": "ayushjhanwar12@gmail.com"
             }
 
             email = resend.Emails.send(params)
