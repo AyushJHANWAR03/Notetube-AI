@@ -410,6 +410,67 @@ async def get_admin_guests(
     return GuestsListResponse(guests=guests, total=total or 0)
 
 
+class ChatListItem(BaseModel):
+    id: str
+    role: str
+    content: str
+    created_at: datetime
+    user_name: Optional[str]
+    user_email: Optional[str]
+    video_title: Optional[str]
+    video_id: Optional[str]
+
+
+class ChatsListResponse(BaseModel):
+    chats: List[ChatListItem]
+    total: int
+
+
+@router.get("/chats", response_model=ChatsListResponse)
+async def get_admin_chats(
+    admin: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0)
+) -> ChatsListResponse:
+    total_result = await db.execute(text("SELECT COUNT(*) FROM chat_messages WHERE role = 'user'"))
+    total = total_result.scalar()
+
+    chats_result = await db.execute(text("""
+        SELECT
+            cm.id,
+            cm.role,
+            cm.content,
+            cm.created_at,
+            u.name as user_name,
+            u.email as user_email,
+            v.title as video_title,
+            cm.video_id
+        FROM chat_messages cm
+        LEFT JOIN users u ON cm.user_id = u.id
+        LEFT JOIN videos v ON cm.video_id = v.id
+        WHERE cm.role = 'user'
+        ORDER BY cm.created_at DESC
+        LIMIT :limit OFFSET :offset
+    """), {"limit": limit, "offset": offset})
+
+    chats = [
+        ChatListItem(
+            id=str(row[0]),
+            role=row[1],
+            content=row[2][:300] if row[2] else "",
+            created_at=row[3],
+            user_name=row[4],
+            user_email=row[5],
+            video_title=row[6],
+            video_id=str(row[7]) if row[7] else None
+        )
+        for row in chats_result.fetchall()
+    ]
+
+    return ChatsListResponse(chats=chats, total=total or 0)
+
+
 class InsightsResponse(BaseModel):
     insights: str
     video_categories: List[dict]

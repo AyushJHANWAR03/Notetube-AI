@@ -72,6 +72,17 @@ export interface UserDetail {
   }>;
 }
 
+export interface ChatListItem {
+  id: string;
+  role: string;
+  content: string;
+  created_at: string;
+  user_name: string | null;
+  user_email: string | null;
+  video_title: string | null;
+  video_id: string | null;
+}
+
 export interface AdminInsights {
   insights: string;
   video_categories: Array<{ name: string; count: number }>;
@@ -125,6 +136,14 @@ export const adminApi = {
   // Get AI insights
   getInsights: async (): Promise<AdminInsights> => {
     const response = await api.get('/api/admin/insights');
+    return response.data;
+  },
+
+  // Get chats list
+  getChats: async (limit = 50, offset = 0): Promise<{ chats: ChatListItem[]; total: number }> => {
+    const response = await api.get('/api/admin/chats', {
+      params: { limit, offset }
+    });
     return response.data;
   }
 };

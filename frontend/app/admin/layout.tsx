@@ -43,6 +43,7 @@ export default function AdminLayout({
     { href: '/admin/users', label: 'Users', icon: '👥' },
     { href: '/admin/videos', label: 'Videos', icon: '🎬' },
     { href: '/admin/guests', label: 'Guests', icon: '👤' },
+    { href: '/admin/chats', label: 'Chats', icon: '💬' },
   ];
 
   return (

@@ -263,5 +263,108 @@ class EmailService:
             return False
 
 
+    def _get_limit_increase_approval_html(self, user_name: str, new_limit: int) -> str:
+        """Generate limit increase approval email HTML template."""
+        first_name = user_name.split()[0] if user_name else "there"
+        
+        return f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #111827; color: #e5e7eb;">
+    <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+        <!-- Header -->
+        <div style="text-align: center; margin-bottom: 32px;">
+            <h1 style="font-size: 28px; font-weight: bold; margin: 0;">
+                <span style="background: linear-gradient(to right, #3b82f6, #06b6d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">NoteTube AI</span>
+            </h1>
+        </div>
+
+        <!-- Main Content -->
+        <div style="background-color: #1f2937; border-radius: 12px; padding: 32px; border: 1px solid #374151;">
+            <p style="font-size: 18px; color: #f3f4f6; margin: 0 0 16px 0;">
+                Hey {first_name},
+            </p>
+
+            <p style="color: #9ca3af; line-height: 1.6; margin: 0 0 20px 0;">
+                Thank you for your feedback and for using NoteTube AI! We've reviewed your request and are happy to let you know that we've increased your video limit to <strong style="color: #10b981;">{new_limit} videos</strong>.
+            </p>
+
+            <p style="color: #9ca3af; line-height: 1.6; margin: 0 0 20px 0;">
+                We're thrilled to hear that you're finding NoteTube AI helpful for your CompTIA Security+ certification preparation. Your success is our success, and we're here to support your learning journey.
+            </p>
+
+            <p style="color: #9ca3af; line-height: 1.6; margin: 0 0 20px 0;">
+                If you have any questions, need assistance, or have suggestions for how we can improve NoteTube AI, please don't hesitate to reach out. We'd love to hear your thoughts!
+            </p>
+
+            <!-- CTA Button -->
+            <div style="text-align: center; margin: 32px 0;">
+                <a href="{settings.FRONTEND_URL}/dashboard"
+                   style="display: inline-block; background: linear-gradient(to right, #3b82f6, #06b6d4); color: white; font-weight: 600; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-size: 16px;">
+                    Continue Learning
+                </a>
+            </div>
+
+            <p style="color: #9ca3af; line-height: 1.6; margin: 24px 0 0 0;">
+                Best of luck with your certification!<br>
+                <strong style="color: #f3f4f6;">Ayush</strong><br>
+                <span style="font-size: 14px;">Creator, NoteTube AI</span>
+            </p>
+        </div>
+
+        <!-- Footer -->
+        <div style="text-align: center; margin-top: 32px; color: #6b7280; font-size: 12px;">
+            <p style="margin: 0 0 8px 0;">
+                Made with care in India
+            </p>
+            <p style="margin: 0;">
+                <a href="{settings.FRONTEND_URL}" style="color: #3b82f6; text-decoration: none;">notetubeai.in</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+    async def send_limit_increase_approval(self, to_email: str, user_name: str, new_limit: int) -> bool:
+        """
+        Send thank you email for limit increase approval.
+
+        Args:
+            to_email: User's email address
+            user_name: User's display name
+            new_limit: The new video limit that has been set
+
+        Returns:
+            True if email sent successfully, False otherwise
+        """
+        if not self.enabled:
+            logger.info(f"Email disabled - would send limit increase approval to {to_email}")
+            return False
+
+        try:
+            first_name = user_name.split()[0] if user_name else "there"
+
+            params = {
+                "from": f"Ayush from NoteTube AI <hello@{settings.RESEND_FROM_DOMAIN}>",
+                "to": [to_email],
+                "subject": f"Your NoteTube AI Limit Has Been Increased to {new_limit} Videos!",
+                "html": self._get_limit_increase_approval_html(user_name, new_limit),
+                "reply_to": "ayush@notetubeai.in"
+            }
+
+            email = resend.Emails.send(params)
+            logger.info(f"Limit increase approval email sent to {to_email}: {email}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to send limit increase approval email to {to_email}: {e}")
+            return False
+
+
 # Singleton instance
 email_service = EmailService()
