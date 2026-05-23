@@ -12,14 +12,16 @@
     "test:coverage": "jest --coverage"
   },
   "dependencies": {
+    "axios": "^1.6.7",
+    "mixpanel-browser": "^2.73.0",
     "next": "14.2.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "axios": "^1.6.7"
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.2.0",
     "@testing-library/react": "^14.1.2",
+    "@types/mixpanel-browser": "^2.60.0",
     "@types/node": "^20.11.16",
     "@types/react": "^18.2.52",
     "@types/react-dom": "^18.2.18",

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useStreamingChat, ChatMessageItem } from '@/hooks/useStreamingChat';
+import { track } from '@/lib/mixpanel';
 
 interface ChatPanelProps {
   videoId: string;
@@ -67,11 +68,13 @@ export default function ChatPanel({
 
     const message = inputValue.trim();
     setInputValue('');
+    track('chat_message_sent', { video_id: videoId, message_length: message.length, source: 'manual' });
     await sendMessage(message);
   };
 
   const handleSuggestedPrompt = (prompt: string) => {
     if (isStreaming) return;
+    track('chat_message_sent', { video_id: videoId, message_length: prompt.length, source: 'suggested_prompt' });
     sendMessage(prompt);
   };
 

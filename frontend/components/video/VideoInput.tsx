@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { videoApi, extractYouTubeVideoId, getYouTubeThumbnail } from '@/lib/videoApi';
+import { track } from '@/lib/mixpanel';
 
 interface VideoInputProps {
   onVideoSubmitted: (videoId: string) => void;
@@ -65,11 +66,13 @@ export default function VideoInput({
       // Use guest API if not authenticated
       if (isGuest) {
         const response = await videoApi.createVideoAsGuest(url);
+        track('video_submitted', { video_id: response.video.id, youtube_video_id: videoId, is_guest: true });
         onVideoSubmitted(response.video.id);
         setUrl('');
         setPreview(null);
       } else {
         const response = await videoApi.createVideo(url);
+        track('video_submitted', { video_id: response.video.id, youtube_video_id: videoId, is_guest: false });
         onVideoSubmitted(response.video.id);
         setUrl('');
         setPreview(null);
@@ -77,12 +80,14 @@ export default function VideoInput({
     } catch (err: any) {
       // Handle guest limit reached
       if (err.response?.data?.requires_auth || err.response?.data?.detail === 'GUEST_LIMIT_REACHED') {
+        track('guest_limit_reached');
         if (onGuestLimitReached) {
           onGuestLimitReached();
         }
         setLoading(false);
         return;
       }
+      track('video_submit_failed', { error: err.response?.data?.detail || 'unknown' });
       setError(err.response?.data?.detail || 'Failed to submit video. Please try again.');
       setLoading(false);
     }

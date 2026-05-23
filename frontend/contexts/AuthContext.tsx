@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { User } from '@/lib/types';
 import api from '@/lib/api';
+import { initMixpanel, identifyUser, resetMixpanel } from '@/lib/mixpanel';
 
 interface AuthContextType {
   user: User | null;
@@ -24,6 +25,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (initializedRef.current) return;
     initializedRef.current = true;
 
+    // Initialize Mixpanel for everyone (guest + signed-in)
+    initMixpanel();
+
     // Check if user is already logged in on mount
     const token = localStorage.getItem('token');
     if (token) {
@@ -37,6 +41,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await api.get('/api/me');
       setUser(response.data);
+      // Merge guest device_id with user_id - this is the key identity bridge
+      identifyUser(response.data.id, {
+        $email: response.data.email,
+        $name: response.data.name,
+        videos_analyzed: response.data.videos_analyzed,
+        video_limit: response.data.video_limit,
+      });
     } catch (error: any) {
       console.error('Failed to fetch user:', error);
       // Only remove token on 401 Unauthorized - not on network errors
@@ -59,6 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = () => {
+    resetMixpanel();
     localStorage.removeItem('token');
     setUser(null);
     window.location.href = '/';

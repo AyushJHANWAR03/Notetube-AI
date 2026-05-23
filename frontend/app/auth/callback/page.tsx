@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { videoApi } from '@/lib/videoApi';
+import { identifyUser, track } from '@/lib/mixpanel';
 
 function AuthCallbackContent() {
   const router = useRouter();
@@ -41,6 +42,16 @@ function AuthCallbackContent() {
         // Store token and user
         localStorage.setItem('token', data.access_token);
         setUser(data.user);
+
+        // Mixpanel: bridge guest device_id to user_id (Simplified ID Merge)
+        identifyUser(data.user.id, {
+          $email: data.user.email,
+          $name: data.user.name,
+        });
+        track('sign_in_completed', {
+          sign_in_method: 'google',
+          is_new_user: data.is_new_user ?? false,
+        });
 
         // Set flag to indicate recent auth - prevents redirect race condition on video page
         sessionStorage.setItem('recentAuth', 'true');

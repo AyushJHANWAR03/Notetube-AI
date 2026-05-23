@@ -10,6 +10,7 @@ import TranscriptPanel from '@/components/video/TranscriptPanel';
 import ChatPanel from '@/components/video/ChatPanel';
 import NotesPanel from '@/components/video/NotesPanel';
 import ProcessingPanel from '@/components/video/ProcessingPanel';
+import { track } from '@/lib/mixpanel';
 
 type TabType = 'transcript' | 'chat' | 'notes' | 'chapters' | 'flashcards';
 
@@ -280,6 +281,14 @@ export default function VideoDetailPage() {
       const data = await videoApi.getVideo(params.id as string);
       setVideo(data);
       setError(null);
+      if (!isPolling) {
+        track('video_opened', {
+          video_id: data.id,
+          status: data.status,
+          duration_seconds: data.duration_seconds,
+          is_guest: !user,
+        });
+      }
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to load video');
     } finally {
@@ -313,6 +322,7 @@ export default function VideoDetailPage() {
       setUserNotes(prev => [...prev, note].sort((a, b) => a.timestamp - b.timestamp));
       // Switch to notes tab to show the saved note
       setActiveTab('notes');
+      track('user_note_saved', { video_id: video.id, text_length: text.length });
     } catch (error) {
       console.error('Failed to save note:', error);
     } finally {
@@ -324,6 +334,7 @@ export default function VideoDetailPage() {
   const handleExplain = (text: string) => {
     setPendingChatMessage(text);
     setActiveTab('chat');
+    track('explain_with_ai_clicked', { video_id: video?.id, text_length: text.length });
   };
 
   // Handle sign in from Chat/Notes tabs - return to current video after login
@@ -344,6 +355,7 @@ export default function VideoDetailPage() {
     try {
       const result = await videoApi.seekToTopic(video.id, searchTerm);
       setSeekResult(result);
+      track('take_me_there_used', { video_id: video.id, query: searchTerm, confidence: result.confidence });
 
       // Auto-seek if a valid timestamp was found
       if (result.timestamp !== null && result.confidence !== 'none') {
@@ -477,7 +489,10 @@ export default function VideoDetailPage() {
             {tabs.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  track('feature_tab_clicked', { tab: tab.id, video_id: video?.id });
+                }}
                 className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
                   activeTab === tab.id
                     ? 'border-blue-500 text-blue-400'
