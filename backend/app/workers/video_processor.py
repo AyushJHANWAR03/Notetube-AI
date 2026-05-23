@@ -31,7 +31,7 @@ from app.models.transcript_embedding import TranscriptEmbedding
 from app.models.notes import Notes
 from app.models.job import Job
 from app.models.user import User
-from app.core.constants import VideoStatus, JobStatus, JobType
+from app.core.constants import VideoStatus, JobStatus, JobType, VideoConstraints
 
 # Cooldown between YouTube API calls to avoid rate limits
 YOUTUBE_COOLDOWN_SECONDS = 3
@@ -147,6 +147,18 @@ def _process_video_sync(
             if cached_data:
                 print(f"[STEP 3/7] ✓ Using CACHED transcript for {yt_video_id}")
                 video_data = json.loads(cached_data)
+                # Re-check duration on cached hits — old cache may predate duration limit
+                cached_duration = video_data.get("metadata", {}).get("duration_seconds") or 0
+                if cached_duration > VideoConstraints.MAX_DURATION_SECONDS:
+                    redis_conn.delete(cache_key)
+                    max_hours = VideoConstraints.MAX_DURATION_SECONDS // 3600
+                    actual_hours = cached_duration // 3600
+                    actual_minutes = (cached_duration % 3600) // 60
+                    raise YouTubeServiceError(
+                        f"This video is {actual_hours}h {actual_minutes}m long. "
+                        f"NoteTube currently supports videos up to {max_hours} hours. "
+                        f"Try a shorter video or a specific section."
+                    )
             else:
                 # Fetch from YouTube
                 print(f"[STEP 3/7] Fetching transcript from YouTube (no cache)...")
