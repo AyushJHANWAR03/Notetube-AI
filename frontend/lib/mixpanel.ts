@@ -7,11 +7,16 @@ let initialized = false;
 export const initMixpanel = () => {
   if (initialized || typeof window === 'undefined') return;
 
+  const apiHost = process.env.NODE_ENV === 'production'
+    ? 'https://api.notetubeai.in/mp'
+    : 'https://api-js.mixpanel.com';
+
   mixpanel.init(MIXPANEL_TOKEN, {
     debug: process.env.NODE_ENV !== 'production',
     track_pageview: true,
     persistence: 'localStorage',
     ignore_dnt: true,
+    api_host: apiHost,
   });
 
   initialized = true;
