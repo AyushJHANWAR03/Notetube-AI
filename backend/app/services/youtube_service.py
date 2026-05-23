@@ -10,6 +10,7 @@ from typing import Dict, Any
 import requests
 
 from app.core.config import settings
+from app.core.constants import VideoConstraints
 
 
 # YouTube Data API v3 configuration
@@ -262,9 +263,22 @@ class YouTubeService:
     def process_video_url(self, url: str, language: str = "en") -> Dict[str, Any]:
         """
         Complete workflow: extract video ID, fetch metadata and transcript.
+        Enforces MAX_DURATION_SECONDS before expensive transcript fetch.
         """
         video_id = self.extract_video_id(url)
         metadata = self.get_video_metadata(video_id)
+
+        duration = metadata.get("duration_seconds") or 0
+        if duration > VideoConstraints.MAX_DURATION_SECONDS:
+            max_hours = VideoConstraints.MAX_DURATION_SECONDS // 3600
+            actual_hours = duration // 3600
+            actual_minutes = (duration % 3600) // 60
+            raise YouTubeServiceError(
+                f"This video is {actual_hours}h {actual_minutes}m long. "
+                f"NoteTube currently supports videos up to {max_hours} hours. "
+                f"Try a shorter video or a specific section."
+            )
+
         transcript = self.get_transcript(video_id, language)
 
         return {
