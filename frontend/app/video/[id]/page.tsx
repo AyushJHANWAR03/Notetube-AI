@@ -162,6 +162,7 @@ export default function VideoDetailPage() {
             console.log('[Polling] Video is READY, showing celebration...');
             setCurrentStep(4); // Mark all steps complete
             setShowCelebration(true);
+            track('video_processing_succeeded', { video_id: params.id as string });
 
             // Clear polling immediately
             if (pollingRef.current) {
@@ -178,6 +179,10 @@ export default function VideoDetailPage() {
           } else if (videoData.status === 'FAILED') {
             console.log('[Polling] Video FAILED');
             setVideo(prev => prev ? { ...prev, status: 'FAILED', failure_reason: videoData.failure_reason } : null);
+            track('video_processing_failed', {
+              video_id: params.id as string,
+              failure_reason: videoData.failure_reason || 'unknown',
+            });
             if (pollingRef.current) {
               clearInterval(pollingRef.current);
               pollingRef.current = null;
@@ -288,6 +293,12 @@ export default function VideoDetailPage() {
           duration_seconds: data.duration_seconds,
           is_guest: !user,
         });
+        if (data.status === 'FAILED') {
+          track('video_failed_view', {
+            video_id: data.id,
+            failure_reason: data.failure_reason || 'unknown',
+          });
+        }
       }
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to load video');
