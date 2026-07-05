@@ -290,6 +290,19 @@ async def list_videos(
     )
 
 
+@router.get("/stats/public")
+async def get_public_stats(db: AsyncSession = Depends(get_db)) -> JSONResponse:
+    """Public counter for landing page social proof. No auth."""
+    from sqlalchemy import select, func
+    from app.models.video import Video
+
+    result = await db.execute(
+        select(func.count()).select_from(Video).where(Video.status == "READY")
+    )
+    count = result.scalar() or 0
+    return JSONResponse({"videos_processed": count})
+
+
 @router.post("/{video_id}/study-notes")
 async def get_or_generate_study_notes(
     video_id: UUID,
