@@ -25,11 +25,12 @@ export default function VideoInput({
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ videoId: string; thumbnail: string } | null>(null);
   const [videosProcessed, setVideosProcessed] = useState<number | null>(null);
+  const [statsFailed, setStatsFailed] = useState(false);
 
   useEffect(() => {
     api.get('/api/videos/stats/public')
       .then(res => setVideosProcessed(res.data.videos_processed))
-      .catch(() => {});
+      .catch(() => setStatsFailed(true));
   }, []);
 
   const handleUrlChange = (value: string) => {
@@ -167,7 +168,18 @@ export default function VideoInput({
         {/* Social proof */}
         <div className="flex items-center gap-2 mt-4 text-xs text-gray-500">
           <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
-          <span><span className="text-gray-300 font-medium">{videosProcessed ? `${videosProcessed.toLocaleString()}+` : '679+'} videos</span> turned into notes · Ready in ~60 seconds</span>
+          <span>
+            <span className="text-gray-300 font-medium">
+              {videosProcessed !== null ? (
+                `${videosProcessed.toLocaleString()}+ videos`
+              ) : statsFailed ? (
+                '500+ videos'
+              ) : (
+                <span className="inline-block w-16 h-3 bg-gray-800 rounded animate-pulse align-middle" />
+              )}
+            </span>{' '}
+            turned into notes · Ready in ~60 seconds
+          </span>
         </div>
       </form>
 
