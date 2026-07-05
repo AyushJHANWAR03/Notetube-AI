@@ -25,7 +25,6 @@ interface TranscriptPanelProps {
   autoScroll: boolean;
   onToggleAutoScroll: () => void;
   onExplain?: (text: string) => void;
-  onTakeNotes?: (text: string) => void;
   // Take Me There (AI Search) props
   onTakeMeThere?: (query: string) => Promise<void>;
   isSearching?: boolean;
@@ -87,7 +86,6 @@ export default function TranscriptPanel({
   autoScroll,
   onToggleAutoScroll,
   onExplain,
-  onTakeNotes,
   onTakeMeThere,
   isSearching = false,
   searchResult,
@@ -245,16 +243,6 @@ export default function TranscriptPanel({
     }
   };
 
-  const handleTakeNotes = (text: string) => {
-    setSelectionPopup(prev => ({ ...prev, visible: false }));
-    window.getSelection()?.removeAllRanges();
-    if (onTakeNotes) {
-      onTakeNotes(text);
-    } else {
-      alert('Take Notes feature coming soon!');
-    }
-  };
-
   if (!segments || segments.length === 0) {
     return (
       <div className="flex items-center justify-center h-64 text-gray-400">
@@ -269,11 +257,11 @@ export default function TranscriptPanel({
       <div className="flex flex-col gap-2 mb-4 pb-3 border-b border-gray-700">
         {/* First-time discovery tip - dismissible (combined: search + text selection) */}
         {showDiscoveryTip && (
-          <div className="flex items-center justify-between bg-blue-900/30 border border-blue-700/50 rounded-lg px-3 py-2">
+          <div className="flex items-center justify-between bg-indigo-900/30 border border-indigo-700/50 rounded-xl px-3 py-2">
             <div className="flex items-center gap-2">
               <span className="text-yellow-400">💡</span>
-              <span className="text-sm text-blue-200">
-                AI search: describe what you're looking for in any language
+              <span className="text-sm text-indigo-200">
+                Search any moment with AI — or select transcript text to explain it in chat
               </span>
             </div>
             <button
@@ -307,7 +295,7 @@ export default function TranscriptPanel({
                 }}
                 placeholder="Describe what you're looking for..."
                 disabled={isSearching}
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg pl-9 pr-10 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                className="w-full bg-gray-900/80 border border-gray-700 rounded-xl pl-9 pr-10 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:opacity-50"
               />
               {isSearching ? (
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
@@ -331,8 +319,8 @@ export default function TranscriptPanel({
             onClick={onToggleAutoScroll}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-colors flex-shrink-0 ${
               autoScroll
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                ? 'bg-indigo-600 text-white'
+                : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
             }`}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -402,15 +390,14 @@ export default function TranscriptPanel({
       {/* Transcript segments */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar relative"
-        style={{ maxHeight: '600px' }}
+        className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-2 custom-scrollbar relative"
         onMouseUp={handleMouseUp}
         onMouseDown={handleMouseDown}
       >
         {/* Selection Popup */}
         {selectionPopup.visible && (
           <div
-            className="selection-popup absolute z-50 flex gap-1 bg-gray-900 border border-gray-600 rounded-lg shadow-xl p-1 transform -translate-x-1/2 -translate-y-full"
+            className="selection-popup absolute z-50 transform -translate-x-1/2 -translate-y-full"
             style={{
               left: selectionPopup.x,
               top: selectionPopup.y,
@@ -418,15 +405,9 @@ export default function TranscriptPanel({
           >
             <button
               onClick={() => handleExplain(selectionPopup.text)}
-              className="px-3 py-1.5 text-xs bg-gray-700 hover:bg-blue-600 text-white rounded transition-colors font-medium"
+              className="flex items-center gap-1.5 px-4 py-2 text-sm bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-xl transition-all font-medium shadow-lg shadow-indigo-600/40"
             >
-              Explain
-            </button>
-            <button
-              onClick={() => handleTakeNotes(selectionPopup.text)}
-              className="px-3 py-1.5 text-xs bg-gray-700 hover:bg-green-600 text-white rounded transition-colors font-medium"
-            >
-              Take Notes
+              <span>✨</span> Explain in Chat
             </button>
           </div>
         )}
@@ -440,8 +421,8 @@ export default function TranscriptPanel({
               ref={isActive ? activeRef : undefined}
               className={`relative p-3 rounded-lg cursor-pointer transition-all duration-200 ${
                 isActive
-                  ? 'bg-blue-900/40 border-l-2 border-blue-500'
-                  : 'hover:bg-gray-700/30 border-l-2 border-transparent'
+                  ? 'bg-indigo-900/30 border-l-2 border-indigo-500'
+                  : 'hover:bg-gray-800/50 border-l-2 border-transparent'
               }`}
               onClick={() => {
                 // Don't seek if user has text selected (they're trying to select, not seek)
@@ -469,15 +450,6 @@ export default function TranscriptPanel({
         })}
       </div>
 
-      {/* Helper text - prominent styling */}
-      <div className="mt-3 pt-3 border-t border-gray-700">
-        <div className="bg-purple-900/20 border border-purple-700/30 rounded-lg px-3 py-2">
-          <p className="text-sm text-purple-300 text-center flex items-center justify-center gap-2">
-            <span>✨</span>
-            <span>Select any text above to explain or save to notes</span>
-          </p>
-        </div>
-      </div>
     </div>
   );
 }

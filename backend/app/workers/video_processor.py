@@ -263,41 +263,6 @@ def _process_video_sync(
                 else:
                     print(f"[STEP 4.5/7] Skipped (already English)")
 
-            # Generate embeddings for semantic search
-            print(f"[STEP 4.6/7] Generating embeddings for semantic search...")
-            try:
-                # Get transcript ID for storing embeddings
-                transcript_obj = db.execute(
-                    select(Transcript).where(Transcript.video_id == video_id)
-                ).scalar_one_or_none()
-
-                if transcript_obj:
-                    embedding_service = EmbeddingService()
-                    embeddings_data = embedding_service.generate_embeddings(segments)
-                    print(f"  - Generated {len(embeddings_data)} embeddings")
-
-                    # Store embeddings in database
-                    for emb_data in embeddings_data:
-                        embedding_obj = TranscriptEmbedding(
-                            transcript_id=transcript_obj.id,
-                            segment_index=emb_data["segment_index"],
-                            segment_text=emb_data["text"],
-                            start_time=emb_data["start"],
-                            duration=emb_data["duration"],
-                            embedding=emb_data["embedding"]
-                        )
-                        db.add(embedding_obj)
-                    db.commit()
-                    print(f"[STEP 4.6/7] ✓ Embeddings saved ({len(embeddings_data)} segments)")
-                else:
-                    print(f"[STEP 4.6/7] ⚠ No transcript found, skipping embeddings")
-
-            except EmbeddingServiceError as e:
-                # Embeddings are optional - don't fail the whole job
-                print(f"[STEP 4.6/7] ⚠ Could not generate embeddings: {e}")
-            except Exception as e:
-                print(f"[STEP 4.6/7] ⚠ Unexpected error generating embeddings: {e}")
-
             # Update job status
             job.status = JobStatus.GENERATING_NOTES
             job.progress = 40
@@ -307,7 +272,7 @@ def _process_video_sync(
             video_title = video_data["metadata"].get("title", "Untitled")
             video_duration = video_data["metadata"].get("duration_seconds", 0)
 
-            print(f"[STEP 5/7] Starting AI content generation (2 parallel tasks)...")
+            print(f"[STEP 5/7] Starting AI content generation (3 parallel tasks: chapters, notes, embeddings)...")
             print(f"  - Transcript length: {len(transcript)} chars")
             print(f"  - Video title: {video_title}")
             ai_results = _generate_ai_content_parallel(
@@ -316,6 +281,31 @@ def _process_video_sync(
                 video_title,
                 video_duration
             )
+
+            # Save embeddings (generated in parallel above) to database
+            embeddings_data = ai_results.get("embeddings") or []
+            if embeddings_data:
+                try:
+                    transcript_obj = db.execute(
+                        select(Transcript).where(Transcript.video_id == video_id)
+                    ).scalar_one_or_none()
+                    if transcript_obj:
+                        db.add_all([
+                            TranscriptEmbedding(
+                                transcript_id=transcript_obj.id,
+                                segment_index=emb_data["segment_index"],
+                                segment_text=emb_data["text"],
+                                start_time=emb_data["start"],
+                                duration=emb_data["duration"],
+                                embedding=emb_data["embedding"]
+                            )
+                            for emb_data in embeddings_data
+                        ])
+                        db.commit()
+                        print(f"[STEP 5/7] ✓ Embeddings saved ({len(embeddings_data)} segments)")
+                except Exception as e:
+                    print(f"[STEP 5/7] ⚠ Could not save embeddings: {e}")
+                    db.rollback()
 
             # For long videos, derive key_timestamps from chapters (better full-video coverage)
             if video_duration > 600 and ai_results["chapters"]["chapters"]:
@@ -331,19 +321,24 @@ def _process_video_sync(
 
             # Generate suggested chat prompts
             print(f"[STEP 5.5/7] Generating suggested chat prompts...")
-            suggested_prompts = []
-            try:
-                chat_service = ChatService()
-                suggested_prompts = chat_service.generate_suggested_prompts(
-                    summary=ai_results["structured"]["summary"],
-                    topics=ai_results["structured"]["topics"],
-                    chapters=ai_results["chapters"]["chapters"]
-                )
-                print(f"[STEP 5.5/7] ✓ Generated {len(suggested_prompts)} suggested prompts")
-            except ChatServiceError as e:
-                print(f"[STEP 5.5/7] ⚠ Could not generate suggested prompts: {e}")
-            except Exception as e:
-                print(f"[STEP 5.5/7] ⚠ Unexpected error generating prompts: {e}")
+            # Prompts now come inline from the structured notes call (saves one AI round trip);
+            # fall back to the dedicated ChatService call for safety.
+            suggested_prompts = ai_results["structured"].get("suggested_prompts") or []
+            if suggested_prompts:
+                print(f"[STEP 5.5/7] ✓ Got {len(suggested_prompts)} suggested prompts from notes generation")
+            else:
+                try:
+                    chat_service = ChatService()
+                    suggested_prompts = chat_service.generate_suggested_prompts(
+                        summary=ai_results["structured"]["summary"],
+                        topics=ai_results["structured"]["topics"],
+                        chapters=ai_results["chapters"]["chapters"]
+                    )
+                    print(f"[STEP 5.5/7] ✓ Generated {len(suggested_prompts)} suggested prompts (fallback)")
+                except ChatServiceError as e:
+                    print(f"[STEP 5.5/7] ⚠ Could not generate suggested prompts: {e}")
+                except Exception as e:
+                    print(f"[STEP 5.5/7] ⚠ Unexpected error generating prompts: {e}")
 
             # Save notes to database
             print(f"[STEP 6/7] Saving AI-generated notes to database...")
@@ -354,6 +349,7 @@ def _process_video_sync(
 
             notes = Notes(
                 video_id=video_id,
+                tldr=ai_results["structured"].get("tldr", ""),
                 summary=ai_results["structured"]["summary"],
                 bullets=ai_results["structured"]["bullets"],
                 key_timestamps=ai_results["structured"]["key_timestamps"],
@@ -361,7 +357,8 @@ def _process_video_sync(
                 action_items=ai_results["structured"]["action_items"],
                 topics=ai_results["structured"]["topics"],
                 difficulty_level=ai_results["structured"]["difficulty_level"],
-                markdown_notes="",
+                markdown_notes=ai_results.get("study_notes", ""),
+                short_notes=ai_results.get("short_notes", ""),
                 chapters=ai_results["chapters"]["chapters"],
                 notes_model=ai_results["structured"]["model_used"],
                 notes_tokens=ai_results["structured"]["tokens_used"],
@@ -530,12 +527,20 @@ def _generate_ai_content_parallel(
         print(f"  [AI] ✓ Structured notes done ({result['tokens_used']} tokens)")
         return result
 
-    # Run 2 AI tasks in parallel
-    print(f"  [AI] Launching 2 parallel AI requests (Groq primary, OpenAI fallback)...")
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    def generate_embeddings():
+        print(f"  [AI] Starting embeddings generation...")
+        result = EmbeddingService().generate_embeddings(segments)
+        print(f"  [AI] ✓ Embeddings done ({len(result)} segments)")
+        return result
+
+    # PHASE A: chapters + structured notes + embeddings in parallel
+    # (embeddings are optional — failure doesn't fail the job)
+    print(f"  [AI] Phase A: chapters, structured notes, embeddings (parallel)...")
+    with ThreadPoolExecutor(max_workers=3) as executor:
         futures = {
             executor.submit(generate_chapters): "chapters",
-            executor.submit(generate_structured): "structured"
+            executor.submit(generate_structured): "structured",
+            executor.submit(generate_embeddings): "embeddings",
         }
 
         results = {}
@@ -544,10 +549,41 @@ def _generate_ai_content_parallel(
             try:
                 results[task_name] = future.result()
             except Exception as e:
+                if task_name == "embeddings":
+                    print(f"  [AI] ⚠ Embeddings failed (non-fatal): {str(e)}")
+                    results[task_name] = []
+                    continue
                 print(f"  [AI] ❌ Task '{task_name}' FAILED: {str(e)}")
                 raise AINotesServiceError(f"Failed to generate {task_name}: {str(e)}")
 
-    print(f"  [AI] All 2 AI tasks completed successfully")
+    # PHASE B: downloadable notes, anchored to the chapters from Phase A.
+    # Both styles run in parallel; each fans out per-chapter internally.
+    # Non-fatal — the on-demand endpoint regenerates on first download if missing.
+    chapters_list = results.get("chapters", {}).get("chapters", [])
+    print(f"  [AI] Phase B: chapter-anchored notes (detailed + short, parallel)...")
+
+    def generate_notes_style(style: str) -> str:
+        return ai_service.generate_study_notes_chaptered(
+            segments=segments,
+            chapters=chapters_list,
+            video_title=video_title,
+            style=style,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        notes_futures = {
+            executor.submit(generate_notes_style, "detailed"): "study_notes",
+            executor.submit(generate_notes_style, "short"): "short_notes",
+        }
+        for future in as_completed(notes_futures):
+            task_name = notes_futures[future]
+            try:
+                results[task_name] = future.result()
+            except Exception as e:
+                print(f"  [AI] ⚠ {task_name} failed (non-fatal): {str(e)}")
+                results[task_name] = ""
+
+    print(f"  [AI] All AI tasks completed")
     return results
 
 

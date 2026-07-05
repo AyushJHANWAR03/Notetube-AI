@@ -27,11 +27,20 @@ export const identifyUser = (userId: string, traits?: Record<string, any>) => {
   mixpanel.identify(userId);
   if (traits) {
     mixpanel.people.set(traits);
+    // Register email/name as super properties so they appear on every event
+    const superProps: Record<string, any> = {};
+    if (traits.$email) superProps.email = traits.$email;
+    if (traits.$name) superProps.name = traits.$name;
+    if (Object.keys(superProps).length > 0) {
+      mixpanel.register(superProps);
+    }
   }
 };
 
 export const resetMixpanel = () => {
   if (!initialized || typeof window === 'undefined') return;
+  mixpanel.unregister('email');
+  mixpanel.unregister('name');
   mixpanel.reset();
 };
 

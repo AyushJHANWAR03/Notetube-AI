@@ -168,7 +168,7 @@ export default function ChatPanel({
                   <button
                     key={i}
                     onClick={() => handleSuggestedPrompt(prompt)}
-                    className="w-full text-left p-2 rounded-lg bg-gray-700/50 hover:bg-gray-700 border border-gray-600 hover:border-purple-500 transition-all text-sm text-gray-300 hover:text-white"
+                    className="w-full text-left p-2.5 rounded-xl bg-gray-900/70 hover:bg-gray-800 border border-gray-800 hover:border-indigo-500/60 transition-all text-sm text-gray-300 hover:text-white"
                   >
                     {prompt}
                   </button>
@@ -179,7 +179,7 @@ export default function ChatPanel({
         </div>
 
         {/* Input at bottom - always visible */}
-        <div className="flex-shrink-0 border-t border-gray-700 p-3 bg-gray-800">
+        <div className="flex-shrink-0 border-t border-gray-800/60 p-3 bg-[#0b0d14]">
           <form onSubmit={handleSubmit} className="flex gap-2">
             <textarea
               ref={inputRef}
@@ -188,15 +188,15 @@ export default function ChatPanel({
               onKeyDown={handleKeyDown}
               placeholder="Ask about this video..."
               rows={1}
-              className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+              className="flex-1 bg-gray-900/80 border border-gray-700 rounded-xl px-3 py-2 text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
             />
             <button
               type="submit"
               disabled={!inputValue.trim() || isStreaming}
-              className={`px-3 py-2 rounded-lg transition-colors ${
+              className={`px-3 py-2 rounded-xl transition-colors ${
                 inputValue.trim() && !isStreaming
-                  ? 'bg-purple-600 hover:bg-purple-500 text-white'
-                  : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                  ? 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white'
+                  : 'bg-gray-800 text-gray-500 cursor-not-allowed'
               }`}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -251,7 +251,7 @@ export default function ChatPanel({
       </div>
 
       {/* Input area - fixed at bottom */}
-      <div className="flex-shrink-0 border-t border-gray-700 bg-gray-800">
+      <div className="flex-shrink-0 border-t border-gray-800/60 bg-[#0b0d14]">
         {/* Follow-up prompts */}
         {followupPrompts.length > 0 && !isStreaming && (
           <div className="px-4 pt-3 flex flex-wrap gap-2">
@@ -276,15 +276,15 @@ export default function ChatPanel({
               placeholder="Ask a follow-up question..."
               rows={1}
               disabled={isStreaming}
-              className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent disabled:opacity-50"
+              className="flex-1 bg-gray-900/80 border border-gray-700 rounded-xl px-4 py-2 text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:opacity-50"
             />
             <button
               type="submit"
               disabled={!inputValue.trim() || isStreaming}
-              className={`px-4 py-2 rounded-lg transition-colors ${
+              className={`px-4 py-2 rounded-xl transition-colors ${
                 inputValue.trim() && !isStreaming
-                  ? 'bg-purple-600 hover:bg-purple-500 text-white'
-                  : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                  ? 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white'
+                  : 'bg-gray-800 text-gray-500 cursor-not-allowed'
               }`}
             >
               {isStreaming ? (
@@ -383,8 +383,8 @@ function ChatMessage({
       <div
         className={`max-w-[85%] rounded-lg px-4 py-2 ${
           isUser
-            ? 'bg-purple-600 text-white'
-            : 'bg-gray-700 text-gray-200'
+            ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white'
+            : 'bg-gray-800 text-gray-200'
         }`}
       >
         <p className="text-sm whitespace-pre-wrap">

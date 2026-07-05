@@ -8,6 +8,7 @@ import VideoInput from '@/components/video/VideoInput';
 import VideoCard from '@/components/video/VideoCard';
 import SignInModal from '@/components/SignInModal';
 import LimitReachedModal from '@/components/LimitReachedModal';
+import HeroPreview from '@/components/HeroPreview';
 import api from '@/lib/api';
 import { videoApi } from '@/lib/videoApi';
 import { Video } from '@/lib/types';
@@ -111,82 +112,13 @@ export default function Dashboard() {
     );
   }
 
-  const features = [
-    {
-      icon: (
-        <svg className="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
-      ),
-      color: 'blue',
-      title: 'Take Me There',
-      description: 'AI semantic search to find any moment in the video instantly.'
-    },
-    {
-      icon: (
-        <svg className="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
-      ),
-      color: 'cyan',
-      title: 'Transcript',
-      description: 'Full searchable transcript with timestamps and auto-scroll.'
-    },
-    {
-      icon: (
-        <svg className="w-6 h-6 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-        </svg>
-      ),
-      color: 'yellow',
-      title: 'User Notes',
-      description: 'Save selections from transcript and rewrite with AI.'
-    },
-    {
-      icon: (
-        <svg className="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-        </svg>
-      ),
-      color: 'purple',
-      title: 'Chat',
-      description: 'Chat with AI about video content and get instant answers.'
-    },
-    {
-      icon: (
-        <svg className="w-6 h-6 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
-        </svg>
-      ),
-      color: 'orange',
-      title: 'Breakdown',
-      description: 'AI-generated chapters with summaries for easy navigation.'
-    },
-    {
-      icon: (
-        <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-        </svg>
-      ),
-      color: 'green',
-      title: 'Flashcards',
-      description: 'Auto-generated flashcards to test your knowledge.'
-    }
-  ];
-
-  const colorClasses: Record<string, string> = {
-    blue: 'bg-blue-500/20',
-    cyan: 'bg-cyan-500/20',
-    yellow: 'bg-yellow-500/20',
-    purple: 'bg-purple-500/20',
-    orange: 'bg-orange-500/20',
-    green: 'bg-green-500/20'
-  };
-
   return (
-    <div className="min-h-screen bg-gray-900">
+    <div className="min-h-screen bg-[#07080c] relative overflow-hidden">
+      {/* Hero glow blob */}
+      <div className="hero-glow" aria-hidden="true"></div>
+
       {/* Header */}
-      <header className="border-b border-gray-800">
+      <header className="border-b border-gray-800/60 relative z-50">
         <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex justify-between items-center">
           <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-500 to-cyan-500 bg-clip-text text-transparent">
             NoteTube AI
@@ -222,21 +154,30 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-12 sm:px-6 lg:px-8">
+      <main className="max-w-7xl mx-auto px-4 py-12 sm:px-6 lg:px-8 relative z-10">
         {/* Hero Section */}
-        <div className="text-center mb-12">
-          <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">
-            {user ? `Welcome back, ${user.name?.split(' ')[0]}!` : 'Transform YouTube into Learning'}
+        <div className="text-center mb-10">
+          <h2 className="text-4xl md:text-6xl font-bold text-white mb-4 tracking-tight">
+            {user ? (
+              `Welcome back, ${user.name?.split(' ')[0]}!`
+            ) : (
+              <>
+                Turn any YouTube video into{' '}
+                <span className="bg-gradient-to-r from-indigo-400 via-violet-400 to-cyan-400 bg-clip-text text-transparent">
+                  study notes
+                </span>
+              </>
+            )}
           </h2>
-          <p className="text-xl text-gray-400 max-w-2xl mx-auto">
+          <p className="text-lg md:text-xl text-gray-400 max-w-2xl mx-auto">
             {user
-              ? 'Transform YouTube videos into complete learning experiences with AI-powered notes, flashcards, and chapters.'
-              : 'Paste any YouTube video and get AI-powered notes, flashcards, chapters, and more.'}
+              ? 'Paste a video and get AI notes, flashcards, chapters, and chat — in about a minute.'
+              : 'AI notes, smart chapters, flashcards, and chat — generated from any video in ~60 seconds. No signup needed for your first video.'}
           </p>
         </div>
 
         {/* Video Input */}
-        <div className="max-w-3xl mx-auto mb-16">
+        <div className="max-w-3xl mx-auto mb-12">
           <VideoInput
             onVideoSubmitted={handleVideoSubmitted}
             onBeforeSubmit={handleGenerateNotesAttempt}
@@ -244,6 +185,13 @@ export default function Dashboard() {
             isGuest={!user}
           />
         </div>
+
+        {/* Animated output preview — shown to guests and users with no videos */}
+        {(!user || (user && recentVideos.length === 0 && !loadingRecent)) && (
+          <div className="mb-16">
+            <HeroPreview />
+          </div>
+        )}
 
         {/* Videos Section - Show for authenticated users with videos */}
         {user && recentVideos.length > 0 && (
@@ -306,17 +254,102 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Features Grid - 6 features in 2 rows */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
-          {features.map((feature, index) => (
-            <div key={index} className="p-6 bg-gray-800 border border-gray-700 rounded-xl">
-              <div className={`w-12 h-12 ${colorClasses[feature.color]} rounded-lg flex items-center justify-center mb-4`}>
-                {feature.icon}
+        {/* Bento Features Grid */}
+        <div className="mb-16">
+          <h3 className="text-center text-sm font-medium text-indigo-400 uppercase tracking-widest mb-2">Everything you get</h3>
+          <p className="text-center text-2xl md:text-3xl font-bold text-white mb-8">One video in. A full study kit out.</p>
+
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-4 auto-rows-[minmax(140px,auto)]">
+            {/* Take Me There — flagship, large tile */}
+            <div className="bento-tile md:col-span-4 md:row-span-2 p-6 bg-gray-900/70 border border-gray-800 rounded-2xl relative overflow-hidden">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(99,102,241,0.12),transparent_55%)] pointer-events-none"></div>
+              <div className="w-11 h-11 bg-indigo-500/20 rounded-xl flex items-center justify-center mb-4">
+                <svg className="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
               </div>
-              <h3 className="text-lg font-semibold text-white mb-2">{feature.title}</h3>
-              <p className="text-gray-400 text-sm">{feature.description}</p>
+              <h3 className="text-xl font-semibold text-white mb-2">Take Me There</h3>
+              <p className="text-gray-400 text-sm mb-6 max-w-md">Describe any moment in plain English — our AI semantic search jumps you to the exact timestamp instantly.</p>
+
+              {/* Mock search UI */}
+              <div className="rounded-xl border border-gray-800 bg-[#0b0d14] p-3 max-w-lg">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 mb-3">
+                  <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <span className="text-sm text-gray-300">"where he explains vector databases"</span>
+                </div>
+                <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-indigo-500/10 border border-indigo-500/30">
+                  <span className="text-xs font-mono text-indigo-400">16:01</span>
+                  <span className="text-xs text-gray-300 flex-1">Vector Databases — storage &amp; retrieval for embeddings</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300">98% match</span>
+                </div>
+              </div>
             </div>
-          ))}
+
+            {/* User Notes */}
+            <div className="bento-tile md:col-span-2 p-6 bg-gray-900/70 border border-gray-800 rounded-2xl">
+              <div className="w-11 h-11 bg-yellow-500/15 rounded-xl flex items-center justify-center mb-3">
+                <svg className="w-6 h-6 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-white mb-1.5">User Notes</h3>
+              <p className="text-gray-400 text-sm">Highlight any part of the transcript, save it, and rewrite it with AI — formal, bullets, or explained simply.</p>
+            </div>
+
+            {/* Flashcards — flip on hover */}
+            <div className="bento-tile md:col-span-2 bg-gray-900/70 border border-gray-800 rounded-2xl flip-card">
+              <div className="flip-inner h-full">
+                <div className="flip-front p-6 h-full">
+                  <div className="w-11 h-11 bg-green-500/15 rounded-xl flex items-center justify-center mb-3">
+                    <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-semibold text-white mb-1.5">Flashcards</h3>
+                  <p className="text-gray-400 text-sm">Auto-generated Q&amp;A cards from the video. <span className="text-green-400/80">Hover to flip →</span></p>
+                </div>
+                <div className="flip-back p-6 h-full rounded-2xl bg-gradient-to-br from-green-900/40 to-emerald-900/30 border border-green-700/30 flex flex-col justify-center">
+                  <p className="text-xs text-green-300 mb-2 font-medium">Q: What is RAG?</p>
+                  <p className="text-sm text-gray-200">Retrieval-Augmented Generation — giving an LLM external knowledge at query time.</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Chat */}
+            <div className="bento-tile md:col-span-2 p-6 bg-gray-900/70 border border-gray-800 rounded-2xl">
+              <div className="w-11 h-11 bg-purple-500/15 rounded-xl flex items-center justify-center mb-3">
+                <svg className="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-white mb-1.5">Chat</h3>
+              <p className="text-gray-400 text-sm">Ask anything about the video and get instant, grounded answers.</p>
+            </div>
+
+            {/* Breakdown */}
+            <div className="bento-tile md:col-span-2 p-6 bg-gray-900/70 border border-gray-800 rounded-2xl">
+              <div className="w-11 h-11 bg-orange-500/15 rounded-xl flex items-center justify-center mb-3">
+                <svg className="w-6 h-6 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-white mb-1.5">Breakdown</h3>
+              <p className="text-gray-400 text-sm">AI-generated chapters with summaries — skim a 1-hour video in 2 minutes.</p>
+            </div>
+
+            {/* Transcript */}
+            <div className="bento-tile md:col-span-2 p-6 bg-gray-900/70 border border-gray-800 rounded-2xl">
+              <div className="w-11 h-11 bg-cyan-500/15 rounded-xl flex items-center justify-center mb-3">
+                <svg className="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-white mb-1.5">Transcript</h3>
+              <p className="text-gray-400 text-sm">Full searchable transcript with timestamps and auto-scroll sync.</p>
+            </div>
+          </div>
         </div>
       </main>
 

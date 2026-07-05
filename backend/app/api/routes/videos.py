@@ -290,6 +290,56 @@ async def list_videos(
     )
 
 
+@router.post("/{video_id}/study-notes")
+async def get_or_generate_study_notes(
+    video_id: UUID,
+    style: str = Query("detailed", pattern="^(detailed|short)$"),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db)
+) -> JSONResponse:
+    """
+    Return written notes (markdown) for a video in the requested style.
+    detailed → cached in notes.markdown_notes (pre-generated during processing for new videos)
+    short → cached in notes.short_notes (generated on first request)
+    """
+    import asyncio
+    from app.services.ai_notes_service import AINotesService, AINotesServiceError
+
+    video_service = VideoProcessingService()
+    video = await video_service.get_video_by_id(video_id, db, include_relations=True)
+
+    if not video or video.status != "READY" or not video.notes:
+        raise HTTPException(status_code=404, detail="Video notes not found")
+
+    cache_field = "markdown_notes" if style == "detailed" else "short_notes"
+
+    # Cached?
+    cached_value = getattr(video.notes, cache_field, None)
+    if cached_value and cached_value.strip():
+        return JSONResponse({"markdown": cached_value, "cached": True, "style": style})
+
+    if not video.transcript or not video.transcript.segments:
+        raise HTTPException(status_code=404, detail="Transcript not available")
+
+    try:
+        ai_service = AINotesService()
+        # Chapter-anchored map-reduce (sync OpenAI calls — run off the event loop)
+        markdown = await asyncio.to_thread(
+            ai_service.generate_study_notes_chaptered,
+            segments=video.transcript.segments,
+            chapters=video.notes.chapters or [],
+            video_title=video.title,
+            style=style,
+        )
+    except AINotesServiceError as e:
+        raise HTTPException(status_code=502, detail=f"Notes generation failed: {str(e)}")
+
+    setattr(video.notes, cache_field, markdown)
+    await db.commit()
+
+    return JSONResponse({"markdown": markdown, "cached": False, "style": style})
+
+
 @router.get("/{video_id}", response_model=VideoDetailResponse)
 async def get_video(
     video_id: UUID,
@@ -359,6 +409,7 @@ async def get_video(
 
     if video.notes:
         response_data["notes"] = {
+            "tldr": video.notes.tldr,
             "summary": video.notes.summary,
             "bullets": video.notes.bullets,
             "key_timestamps": video.notes.key_timestamps,

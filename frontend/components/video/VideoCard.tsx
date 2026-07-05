@@ -37,7 +37,7 @@ export default function VideoCard({ video, onDelete, compact = false }: VideoCar
   const isClickable = video.status !== 'FAILED';
 
   const cardContent = (
-    <div className={`bg-gray-800 rounded-lg border border-gray-700 overflow-hidden ${isClickable ? 'hover:border-gray-600 hover:bg-gray-750 transition-all cursor-pointer' : ''}`}>
+    <div className={`bg-gray-900/70 rounded-2xl border border-gray-800 overflow-hidden ${isClickable ? 'bento-tile cursor-pointer' : ''}`}>
       {/* Thumbnail */}
       <div className="relative">
         <img

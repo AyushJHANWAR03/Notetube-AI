@@ -2,7 +2,7 @@
 Pydantic schemas for video-related API endpoints.
 """
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from uuid import UUID
 
 from pydantic import BaseModel, Field, HttpUrl
@@ -63,10 +63,20 @@ class FlashcardSchema(BaseModel):
     back: str
 
 
+class BulletSchema(BaseModel):
+    """Schema for an enriched key point bullet (Eightify-style)."""
+    emoji: Optional[str] = None
+    text: str
+    time: Optional[str] = None
+    seconds: Optional[int] = None
+
+
 class NotesSchema(BaseModel):
     """Schema for AI-generated notes."""
+    tldr: Optional[str] = None
     summary: str
-    bullets: List[str]
+    # Union supports legacy plain-string bullets from videos processed before the format change
+    bullets: List[Union[str, BulletSchema]]
     key_timestamps: List[KeyTimestampSchema]
     flashcards: List[FlashcardSchema]
     action_items: List[str]

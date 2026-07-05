@@ -17,6 +17,7 @@ class Notes(Base):
     video_id = Column(UUID(as_uuid=True), ForeignKey("videos.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
 
     # Original fields - structured notes for UI
+    tldr = Column(Text, nullable=True)  # One-sentence takeaway shown above the summary
     summary = Column(Text, nullable=False)
     bullets = Column(JSONB, nullable=False)  # ["...", "..."]
     key_timestamps = Column(JSONB, nullable=False)  # [{ "label": "...", "time": "00:01:23", "seconds": 83 }, ...]
@@ -26,7 +27,8 @@ class Notes(Base):
     topics = Column(JSONB, nullable=True)  # ["caching", "load_balancing"]
 
     # New fields - full markdown notes and chapters
-    markdown_notes = Column(Text, nullable=True)  # Full markdown notes from AI
+    markdown_notes = Column(Text, nullable=True)  # Detailed study notes (markdown) for PDF download
+    short_notes = Column(Text, nullable=True)  # Condensed one-page revision sheet (markdown)
     chapters = Column(JSONB, nullable=True)  # [{ "title": "...", "start_time": 0.0, "end_time": 10.0, "summary": "..." }, ...]
 
     # User-saved notes from transcript selections

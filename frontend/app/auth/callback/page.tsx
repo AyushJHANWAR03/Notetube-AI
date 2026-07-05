@@ -98,22 +98,45 @@ function AuthCallbackContent() {
 
   if (error) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-red-600 mb-4">Authentication Error</h1>
-          <p className="text-gray-600">{error}</p>
-          <p className="text-sm text-gray-500 mt-2">Redirecting to home...</p>
+      <div className="flex min-h-screen items-center justify-center bg-[#07080c] relative overflow-hidden">
+        <div className="hero-glow" aria-hidden="true"></div>
+        <div className="text-center relative z-10">
+          <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-red-500/15 border border-red-500/40 flex items-center justify-center">
+            <svg className="w-7 h-7 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-2">Authentication Error</h1>
+          <p className="text-gray-400">{error}</p>
+          <p className="text-sm text-gray-600 mt-2">Redirecting to home...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-900">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-        <h1 className="text-2xl font-bold mb-2 text-white">{status}</h1>
-        <p className="text-gray-400">Please wait while we set up your account</p>
+    <div className="flex min-h-screen items-center justify-center bg-[#07080c] relative overflow-hidden">
+      <div className="hero-glow" aria-hidden="true"></div>
+      <div className="text-center relative z-10">
+        {/* Gradient spinner ring around logo */}
+        <div className="relative w-20 h-20 mx-auto mb-6">
+          <div className="absolute inset-0 rounded-full bg-gradient-to-r from-indigo-500 via-violet-500 to-cyan-400 animate-spin [mask:radial-gradient(farthest-side,transparent_calc(100%-3px),#000_0)]"></div>
+          <div className="absolute inset-2 rounded-full bg-[#0b0d14] flex items-center justify-center text-2xl">
+            ✨
+          </div>
+        </div>
+
+        <h1 className="text-2xl font-bold mb-2 bg-gradient-to-r from-indigo-400 via-violet-400 to-cyan-400 bg-clip-text text-transparent">
+          {status}
+        </h1>
+        <p className="text-gray-400 mb-8">Please wait while we set up your account</p>
+
+        {/* What's waiting for them */}
+        <div className="flex items-center justify-center gap-3 text-xs text-gray-500">
+          <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-900/70 border border-gray-800">📝 AI Notes</span>
+          <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-900/70 border border-gray-800">🃏 Flashcards</span>
+          <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-900/70 border border-gray-800">💬 AI Chat</span>
+        </div>
       </div>
     </div>
   );
@@ -122,8 +145,8 @@ function AuthCallbackContent() {
 export default function AuthCallback() {
   return (
     <Suspense fallback={
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="flex min-h-screen items-center justify-center bg-[#07080c]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
       </div>
     }>
       <AuthCallbackContent />

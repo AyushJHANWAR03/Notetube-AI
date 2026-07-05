@@ -57,9 +57,18 @@ export interface Chapter {
   summary?: string;
 }
 
+export interface Bullet {
+  emoji?: string;
+  text: string;
+  time?: string;
+  seconds?: number;
+}
+
 export interface Notes {
+  tldr?: string;
   summary: string;
-  bullets: string[];
+  // Legacy videos have plain-string bullets; new ones have enriched objects
+  bullets: (string | Bullet)[];
   key_timestamps: Timestamp[];
   flashcards: Flashcard[];
   action_items: string[];

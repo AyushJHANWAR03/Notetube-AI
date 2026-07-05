@@ -93,22 +93,29 @@ export default function VideoInput({
     }
   };
 
+  const exampleVideos = [
+    { label: '🧠 Neural Networks Explained', url: 'https://www.youtube.com/watch?v=aircAruvnKk' },
+    { label: '💻 100 CS Concepts', url: 'https://www.youtube.com/watch?v=-uleG_Vecis' },
+    { label: '🎯 Master Procrastinator (TED)', url: 'https://www.youtube.com/watch?v=arj7oStGLkU' },
+  ];
+
   return (
-    <div className="bg-gray-800 rounded-xl border border-gray-700 p-6">
+    <div className="glow-border">
+      <div className="bg-[#0b0d14] rounded-[calc(1rem-1.5px)] p-6">
       <form onSubmit={handleSubmit}>
         <div className="flex flex-col sm:flex-row gap-4">
           <input
             type="text"
             value={url}
             onChange={(e) => handleUrlChange(e.target.value)}
-            placeholder="Paste YouTube URL here..."
+            placeholder="Paste any YouTube URL..."
             disabled={disabled || loading}
-            className="flex-1 px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+            className="flex-1 px-4 py-3.5 bg-gray-900/80 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:opacity-50 text-base"
           />
           <button
             type="submit"
             disabled={disabled || loading || !url.trim()}
-            className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 disabled:from-gray-600 disabled:to-gray-600 text-white font-semibold px-8 py-3 rounded-lg transition-all flex items-center justify-center gap-2 min-w-[160px]"
+            className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:from-gray-700 disabled:to-gray-700 text-white font-semibold px-8 py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 min-w-[170px] shadow-lg shadow-indigo-600/20"
           >
             {loading ? (
               <>
@@ -123,7 +130,7 @@ export default function VideoInput({
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
-                Analyze Video
+                Get Notes
               </>
             )}
           </button>
@@ -133,9 +140,27 @@ export default function VideoInput({
           <p className="text-red-400 text-sm mt-3">{error}</p>
         )}
 
-        <p className="text-sm text-gray-500 mt-3">
-          Supports YouTube videos, shorts, and embedded links
-        </p>
+        {/* Example chips */}
+        <div className="flex flex-wrap items-center gap-2 mt-4">
+          <span className="text-xs text-gray-500">Try an example:</span>
+          {exampleVideos.map((ex) => (
+            <button
+              key={ex.url}
+              type="button"
+              disabled={disabled || loading}
+              onClick={() => handleUrlChange(ex.url)}
+              className="text-xs px-3 py-1.5 rounded-full bg-gray-800/80 border border-gray-700 text-gray-300 hover:border-indigo-500/60 hover:text-white transition-colors disabled:opacity-50"
+            >
+              {ex.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Social proof */}
+        <div className="flex items-center gap-2 mt-4 text-xs text-gray-500">
+          <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+          <span><span className="text-gray-300 font-medium">679+ videos</span> turned into notes · Ready in ~60 seconds</span>
+        </div>
       </form>
 
       {/* Thumbnail Preview */}
@@ -151,10 +176,11 @@ export default function VideoInput({
           />
           <div>
             <p className="text-sm text-gray-300">Video detected</p>
-            <p className="text-xs text-gray-500 mt-1">Click "Analyze Video" to start</p>
+            <p className="text-xs text-gray-500 mt-1">Click "Get Notes" to start</p>
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

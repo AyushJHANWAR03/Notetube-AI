@@ -19,6 +19,13 @@ from app.prompts import (
     TRANSLITERATION_USER_PROMPT_TEMPLATE,
     CHUNK_TOPICS_SYSTEM_PROMPT,
     CHUNK_TOPICS_USER_PROMPT_TEMPLATE,
+    STUDY_NOTES_SYSTEM_PROMPT,
+    STUDY_NOTES_USER_PROMPT_TEMPLATE,
+    SHORT_NOTES_SYSTEM_PROMPT,
+    SHORT_NOTES_USER_PROMPT_TEMPLATE,
+    SECTION_NOTES_DETAILED_SYSTEM_PROMPT,
+    SECTION_NOTES_SHORT_SYSTEM_PROMPT,
+    SECTION_NOTES_USER_PROMPT_TEMPLATE,
 )
 from app.services.transcript_processor import (
     chunk_transcript,
@@ -30,6 +37,38 @@ from app.services.transcript_processor import (
 class AINotesServiceError(Exception):
     """Custom exception for AI Notes service errors."""
     pass
+
+
+def _get_notes_length_for_duration(video_duration: float, style: str) -> Tuple[str, int]:
+    """Duration-scaled page targets for downloadable notes (mirrors flashcard scaling).
+
+    Returns (length_guidance_text, max_tokens). ~1 page ≈ 450 words ≈ 650 tokens.
+    """
+    # (short_pages, detailed_pages) per duration bucket
+    if video_duration < 600:  # < 10 min
+        short_pages, detailed_pages = "1-2", "2-3"
+    elif video_duration < 1200:  # 10-20 min
+        short_pages, detailed_pages = "2-3", "4-6"
+    elif video_duration < 2400:  # 20-40 min
+        short_pages, detailed_pages = "3-4", "7-8"
+    elif video_duration < 5400:  # 40-90 min
+        short_pages, detailed_pages = "4-6", "9-12"
+    else:  # > 90 min
+        short_pages, detailed_pages = "6-8", "12-15"
+
+    if style == "short":
+        pages = short_pages
+    else:
+        pages = detailed_pages
+
+    upper = int(pages.split("-")[1])
+    guidance = (
+        f"approximately {pages} pages (~{upper * 350}-{upper * 450} words) "
+        f"for this {int(video_duration // 60)}-minute video"
+    )
+    # ~700 tokens per page + buffer, capped at gpt-4o-mini's 16K output limit
+    max_tokens = min(upper * 700 + 1000, 16000)
+    return guidance, max_tokens
 
 
 def _get_flashcard_count_for_duration(video_duration: float) -> str:
@@ -430,6 +469,7 @@ class AINotesService:
 
             # Validate required fields with defaults
             validated_result = {
+                "tldr": result.get("tldr", ""),
                 "summary": result.get("summary", ""),
                 "bullets": result.get("bullets", []),
                 "key_timestamps": result.get("key_timestamps", []),
@@ -437,6 +477,7 @@ class AINotesService:
                 "action_items": result.get("action_items", []),
                 "topics": result.get("topics", []),
                 "difficulty_level": result.get("difficulty_level", "intermediate"),
+                "suggested_prompts": result.get("suggested_prompts", []),
                 "model_used": f"{response.provider.value}:{response.model}",
                 "tokens_used": response.tokens_used
             }
@@ -453,6 +494,142 @@ class AINotesService:
             raise
         except Exception as e:
             raise AINotesServiceError(f"Failed to generate structured notes: {str(e)}")
+
+    def generate_study_notes(
+        self,
+        transcript: str,
+        video_title: Optional[str] = None,
+        style: str = "detailed",
+        video_duration: float = 0,
+        model: str = "gpt-4o-mini"
+    ) -> str:
+        """Generate downloadable written notes (markdown, no timestamps).
+
+        style: "detailed" (full study notes) or "short" (condensed revision notes)
+        video_duration: seconds — scales the target page count and token budget
+        """
+        if not transcript or not transcript.strip():
+            raise AINotesServiceError("Transcript cannot be empty")
+
+        max_chars = TokenLimits.STRUCTURED_NOTES_MAX_CHARS
+        truncated = transcript[:max_chars] if len(transcript) > max_chars else transcript
+
+        length_guidance, max_tokens = _get_notes_length_for_duration(video_duration, style)
+
+        if style == "short":
+            system_prompt = SHORT_NOTES_SYSTEM_PROMPT.format(length_guidance=length_guidance)
+            user_template = SHORT_NOTES_USER_PROMPT_TEMPLATE
+        else:
+            system_prompt = STUDY_NOTES_SYSTEM_PROMPT.format(length_guidance=length_guidance)
+            user_template = STUDY_NOTES_USER_PROMPT_TEMPLATE
+
+        user_prompt = user_template.format(
+            video_title_section=f"Video Title: {video_title}" if video_title else "",
+            transcript=truncated,
+        )
+
+        try:
+            response = self.provider.generate(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                model=model,
+                temperature=0.4,
+                max_tokens=max_tokens,
+            )
+            markdown = response.content.strip()
+            if markdown.startswith("```"):
+                markdown = markdown.strip("`").lstrip("markdown").strip()
+            return markdown
+        except AIProviderError as e:
+            raise AINotesServiceError(f"Study notes generation failed: {str(e)}")
+
+    def generate_study_notes_chaptered(
+        self,
+        segments: List[Dict[str, Any]],
+        chapters: List[Dict[str, Any]],
+        video_title: Optional[str] = None,
+        style: str = "detailed",
+        model: str = "gpt-4o-mini"
+    ) -> str:
+        """
+        Generate notes via map-reduce over chapter boundaries.
+
+        Each chapter's transcript slice gets its own parallel AI call, so coverage
+        is guaranteed and length scales naturally with the video (~1 page per
+        chapter detailed, ~1/3 page short). Falls back to single-call generation
+        when chapters are unavailable.
+        """
+        if not chapters or not segments:
+            transcript = " ".join(seg.get("text", "") for seg in segments)
+            last = segments[-1] if segments else {}
+            duration = last.get("start", 0) + last.get("duration", 0)
+            return self.generate_study_notes(
+                transcript, video_title=video_title, style=style, video_duration=duration
+            )
+
+        system_prompt = (
+            SECTION_NOTES_SHORT_SYSTEM_PROMPT if style == "short"
+            else SECTION_NOTES_DETAILED_SYSTEM_PROMPT
+        )
+        section_max_tokens = 500 if style == "short" else 1200
+
+        # Slice segments into chapter ranges
+        sections = []
+        for i, ch in enumerate(chapters):
+            start = ch.get("start_time", 0)
+            end = ch.get("end_time", float("inf"))
+            text = " ".join(
+                seg.get("text", "") for seg in segments
+                if start <= seg.get("start", 0) < end
+            ).strip()
+            if text:
+                sections.append({"index": i, "title": ch.get("title", f"Section {i+1}"), "text": text})
+
+        print(f"  [Notes/{style}] Map-reduce over {len(sections)} chapter sections...")
+
+        def process_section(section: Dict[str, Any]) -> Tuple[int, str]:
+            user_prompt = SECTION_NOTES_USER_PROMPT_TEMPLATE.format(
+                video_title=video_title or "Untitled",
+                section_number=section["index"] + 1,
+                total_sections=len(sections),
+                section_title=section["title"],
+                section_transcript=section["text"][:15000],
+            )
+            try:
+                response = self.provider.generate(
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    model=model,
+                    temperature=0.4,
+                    max_tokens=section_max_tokens,
+                )
+                content = response.content.strip()
+                if content.startswith("```"):
+                    content = content.strip("`").lstrip("markdown").strip()
+                return section["index"], content
+            except Exception as e:
+                print(f"  [Notes/{style}] Section {section['index'] + 1} failed: {e}")
+                return section["index"], ""
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            results = list(executor.map(process_section, sections))
+
+        # Stitch in chapter order
+        results.sort(key=lambda r: r[0])
+        parts = [p for _, p in results if p]
+        if not parts:
+            raise AINotesServiceError(f"All note sections failed ({style})")
+
+        subtitle = "Quick Revision" if style == "short" else "Study Notes"
+        header = f"# {video_title or 'Video'} — {subtitle}"
+        markdown = header + "\n\n" + "\n\n".join(parts)
+
+        print(f"  [Notes/{style}] ✓ Stitched {len(parts)}/{len(sections)} sections ({len(markdown)} chars)")
+        return markdown
 
     def transliterate_to_english(
         self,
