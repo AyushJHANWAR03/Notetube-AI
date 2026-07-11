@@ -32,12 +32,27 @@ export default function AdminVideosPage() {
   };
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-US', {
+    // Backend sends naive UTC timestamps — append Z so JS parses as UTC, then render in IST
+    const utc = dateStr.endsWith('Z') ? dateStr : dateStr + 'Z';
+    return new Date(utc).toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-    });
+    }) + ' IST';
+  };
+
+  const shortFailure = (reason: string | null) => {
+    if (!reason) return 'Unknown failure';
+    if (/supports videos up to|hours.*long/i.test(reason)) {
+      const match = reason.match(/(\d+h \d+m)/);
+      return `⏱️ Too long${match ? ` (${match[1]})` : ''}`;
+    }
+    if (/caption|subtitle/i.test(reason)) return '🔇 No captions';
+    if (/supadata|429|limit-exceeded/i.test(reason)) return '🔌 Transcript API error';
+    if (/openai|AI provider|generate/i.test(reason)) return '🤖 AI generation error';
+    return reason.slice(0, 60);
   };
 
   const formatDuration = (seconds: number | null) => {
@@ -90,9 +105,9 @@ export default function AdminVideosPage() {
         </div>
       </div>
 
-      <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+      <div className="bg-gray-900/70 rounded-2xl border border-gray-800 overflow-hidden">
         <table className="w-full">
-          <thead className="bg-gray-900">
+          <thead className="bg-[#0b0d14]">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
                 Video
@@ -119,8 +134,13 @@ export default function AdminVideosPage() {
               <tr key={video.id} className="hover:bg-gray-700/50">
                 <td className="px-6 py-4">
                   <div className="text-white max-w-md truncate">
-                    {video.title || 'Processing...'}
+                    {video.title || (video.status === 'FAILED' ? '(failed before metadata)' : 'Processing...')}
                   </div>
+                  {video.status === 'FAILED' && (
+                    <div className="text-xs text-red-400/90 mt-1 max-w-md truncate" title={video.failure_reason || undefined}>
+                      {shortFailure(video.failure_reason)}
+                    </div>
+                  )}
                 </td>
                 <td className="px-6 py-4">
                   {video.is_guest ? (

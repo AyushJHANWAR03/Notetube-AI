@@ -1,6 +1,18 @@
 import api from './api';
 
 // Types
+export interface FailureCategory {
+  category: string;
+  count: number;
+}
+
+export interface DailyVideoCount {
+  date: string;
+  total: number;
+  ready: number;
+  failed: number;
+}
+
 export interface AdminStats {
   total_users: number;
   total_videos: number;
@@ -12,6 +24,10 @@ export interface AdminStats {
   today_users: number;
   today_videos: number;
   today_guests: number;
+  failure_breakdown: FailureCategory[];
+  daily_videos: DailyVideoCount[];
+  guest_videos: number;
+  user_videos: number;
 }
 
 export interface UserListItem {
@@ -37,6 +53,7 @@ export interface VideoListItem {
   duration_seconds: number | null;
   youtube_video_id: string | null;
   original_url: string | null;
+  failure_reason: string | null;
 }
 
 export interface GuestListItem {

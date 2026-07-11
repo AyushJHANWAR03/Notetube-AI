@@ -19,6 +19,18 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 # ============ Response Models ============
 
+class FailureCategory(BaseModel):
+    category: str
+    count: int
+
+
+class DailyVideoCount(BaseModel):
+    date: str  # YYYY-MM-DD (IST)
+    total: int
+    ready: int
+    failed: int
+
+
 class StatsResponse(BaseModel):
     total_users: int
     total_videos: int
@@ -30,6 +42,10 @@ class StatsResponse(BaseModel):
     today_users: int
     today_videos: int
     today_guests: int
+    failure_breakdown: List[FailureCategory] = []
+    daily_videos: List[DailyVideoCount] = []
+    guest_videos: int = 0
+    user_videos: int = 0
 
 
 class UserListItem(BaseModel):
@@ -60,6 +76,7 @@ class VideoListItem(BaseModel):
     duration_seconds: Optional[int]
     youtube_video_id: Optional[str]
     original_url: Optional[str]
+    failure_reason: Optional[str] = None
 
 
 class VideosListResponse(BaseModel):
@@ -119,7 +136,10 @@ async def get_admin_stats(
     """
     Get dashboard statistics for admin panel.
     """
-    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    # "Today" starts at IST midnight (DB stores UTC; IST = UTC+5:30)
+    ist_offset = timedelta(hours=5, minutes=30)
+    now_ist = datetime.utcnow() + ist_offset
+    today = now_ist.replace(hour=0, minute=0, second=0, microsecond=0) - ist_offset
 
     # Total counts
     users_result = await db.execute(text("SELECT COUNT(*) FROM users"))
@@ -159,6 +179,51 @@ async def get_admin_stats(
     )
     today_guests = today_guests_result.scalar()
 
+    # Failure reason breakdown (categorized)
+    failure_result = await db.execute(text("""
+        SELECT
+            CASE
+                WHEN failure_reason ILIKE '%supports videos up to%' OR failure_reason ILIKE '%hours%long%' THEN 'Video too long (>2h)'
+                WHEN failure_reason ILIKE '%caption%' OR failure_reason ILIKE '%subtitle%' THEN 'No captions available'
+                WHEN failure_reason ILIKE '%supadata%' OR failure_reason ILIKE '%429%' OR failure_reason ILIKE '%limit-exceeded%' THEN 'Transcript API error'
+                WHEN failure_reason ILIKE '%openai%' OR failure_reason ILIKE '%AI provider%' OR failure_reason ILIKE '%generate%' THEN 'AI generation error'
+                WHEN failure_reason IS NULL OR failure_reason = '' THEN 'Unknown'
+                ELSE 'Other'
+            END AS category,
+            COUNT(*) AS cnt
+        FROM videos
+        WHERE status = 'FAILED'
+        GROUP BY category
+        ORDER BY cnt DESC
+    """))
+    failure_breakdown = [
+        FailureCategory(category=row[0], count=row[1])
+        for row in failure_result.fetchall()
+    ]
+
+    # Daily video counts, last 7 days, IST-bucketed
+    daily_result = await db.execute(text("""
+        SELECT
+            to_char((created_at + interval '5 hours 30 minutes')::date, 'YYYY-MM-DD') AS ist_date,
+            COUNT(*) AS total,
+            COUNT(*) FILTER (WHERE status = 'READY') AS ready,
+            COUNT(*) FILTER (WHERE status = 'FAILED') AS failed
+        FROM videos
+        WHERE created_at >= :week_ago
+        GROUP BY ist_date
+        ORDER BY ist_date
+    """), {"week_ago": today - timedelta(days=6)})
+    daily_videos = [
+        DailyVideoCount(date=row[0], total=row[1], ready=row[2], failed=row[3])
+        for row in daily_result.fetchall()
+    ]
+
+    # Guest vs signed-in video split
+    split_result = await db.execute(text(
+        "SELECT COUNT(*) FILTER (WHERE user_id IS NULL), COUNT(*) FILTER (WHERE user_id IS NOT NULL) FROM videos"
+    ))
+    split_row = split_result.fetchone()
+
     return StatsResponse(
         total_users=total_users or 0,
         total_videos=total_videos or 0,
@@ -169,7 +234,11 @@ async def get_admin_stats(
         videos_processing=status_counts.get("PROCESSING", 0),
         today_users=today_users or 0,
         today_videos=today_videos or 0,
-        today_guests=today_guests or 0
+        today_guests=today_guests or 0,
+        failure_breakdown=failure_breakdown,
+        daily_videos=daily_videos,
+        guest_videos=split_row[0] if split_row else 0,
+        user_videos=split_row[1] if split_row else 0
     )
 
 
@@ -341,7 +410,8 @@ async def get_admin_videos(
             u.name as user_name,
             u.email as user_email,
             v.youtube_video_id,
-            v.original_url
+            v.original_url,
+            v.failure_reason
         FROM videos v
         LEFT JOIN users u ON v.user_id = u.id
         {where_clause}
@@ -361,7 +431,8 @@ async def get_admin_videos(
             user_email=row[7],
             is_guest=row[5] is None,  # user_id is None for guest videos
             youtube_video_id=row[8],
-            original_url=row[9]
+            original_url=row[9],
+            failure_reason=row[10]
         ))
 
     return VideosListResponse(videos=videos, total=total or 0)

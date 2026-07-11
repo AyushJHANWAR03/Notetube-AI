@@ -32,7 +32,7 @@ export default function AdminLayout({
 
   if (loading || !authorized) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="min-h-screen bg-[#07080c] flex items-center justify-center">
         <div className="text-white text-xl">Loading...</div>
       </div>
     );
@@ -47,7 +47,7 @@ export default function AdminLayout({
   ];
 
   return (
-    <div className="h-screen bg-gray-900 flex overflow-hidden">
+    <div className="h-screen bg-[#07080c] flex overflow-hidden">
       {/* Sidebar - Fixed */}
       <aside className="w-64 bg-gray-800 border-r border-gray-700 flex flex-col h-screen fixed left-0 top-0">
         <div className="p-4 border-b border-gray-700">
