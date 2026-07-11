@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     # JWT
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 43200  # 30 days — no refresh-token flow, so short expiry logs users out daily
 
     # Google OAuth
     GOOGLE_CLIENT_ID: str
