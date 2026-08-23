@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     # Admin
     ADMIN_EMAILS: str = "ayushjhanwar12@gmail.com,agrawalabhinay25@gmail.com,akshayjhanwar@gmail.com"  # Comma-separated list of admin emails
 
+    # Sentry (error tracking) — optional; everything is a no-op if SENTRY_DSN is unset
+    SENTRY_DSN: str | None = None
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.0  # 0 = errors only (no perf tracing); light on the 1GB box + free tier
+
     # API
     API_V1_PREFIX: str = "/api"
     PROJECT_NAME: str = "NoteTube AI"

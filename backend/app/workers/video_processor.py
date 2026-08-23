@@ -20,6 +20,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker, Session
 
 from app.core.config import settings
+from app.core.observability import init_sentry
 from app.services.youtube_service import YouTubeService, YouTubeServiceError
 from app.services.ai_notes_service import AINotesService, AINotesServiceError
 from app.services.chat_service import ChatService, ChatServiceError
@@ -32,6 +33,10 @@ from app.models.notes import Notes
 from app.models.job import Job
 from app.models.user import User
 from app.core.constants import VideoStatus, JobStatus, JobType, VideoConstraints
+
+# Initialize error tracking for the worker process (no-op without SENTRY_DSN).
+# The worker is where video-processing / OpenAI failures actually surface.
+init_sentry("worker")
 
 # Cooldown between YouTube API calls to avoid rate limits
 YOUTUBE_COOLDOWN_SECONDS = 3

@@ -2,6 +2,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.core.observability import init_sentry
+
+# Initialize error tracking before the app starts (no-op without SENTRY_DSN)
+init_sentry("backend")
 
 # Create FastAPI app
 app = FastAPI(

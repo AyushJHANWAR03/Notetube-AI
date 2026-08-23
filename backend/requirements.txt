@@ -42,3 +42,6 @@ numpy>=1.24.0
 # Utils
 python-dotenv==1.0.0
 python-dateutil==2.8.2
+
+# Error tracking (no-op unless SENTRY_DSN is set)
+sentry-sdk[fastapi]==2.68.0
